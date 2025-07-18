@@ -5,6 +5,7 @@ const errorMiddleware = require("./middlewares/errorMiddleware");
 const cors = require("cors");
 const NodeCache = require("node-cache");
 const cookieParser = require("cookie-parser");
+const serverless = require("serverless-http");
 
 dotenv.config();
 
@@ -19,7 +20,6 @@ var corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -33,11 +33,16 @@ app.delete("/api/cache/clear", (req, res) => {
 app.use("/api/auth", require("./routes/authRoutes"));
 
 app.use(cookieParser());
-
 app.use(errorMiddleware);
 
-const PORT = process.env.PORT || 5000;
+const handler = serverless(app);
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+module.exports = app;
+module.exports.handler = handler;
+
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  });
+}
