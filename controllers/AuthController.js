@@ -1,0 +1,359 @@
+const UserAuth = require("../models/AuthUsers");
+const UserVerification = require("../models/UserVerification");
+const bcrypt = require("bcrypt");
+const nodemailer = require("nodemailer");
+const config = require("../config/nodemailer");
+const moment = require("moment");
+
+const sendOtpEmail = async (to, otp) => {
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    auth: {
+      user: config.emailUser,
+      pass: config.emailPassword,
+    },
+  });
+
+  const mailOptions = {
+    from: `"Wurkify App" <${config.emailUser}>`,
+    to: to,
+    subject: "Verify Your Email - Wurkify",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #4CAF50;">Welcome to Wurkify!</h2>
+        <p>Hi there,</p>
+        <p>Thank you for signing up. Please use the following One Time Password (OTP) to verify your email address:</p>
+        <p style="font-size: 24px; font-weight: bold; color: #333; text-align: center; margin: 20px 0;">
+          ${otp}
+        </p>
+        <p>This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+        <p>Best regards,<br/>The Wurkify Team</p>
+        <hr/>
+        <p style="font-size: 12px; color: #999;">If you have any questions, contact us at support@wurkify.com</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+const sendResetOtpEmail = async (to, otp) => {
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    auth: {
+      user: config.emailUser,
+      pass: config.emailPassword,
+    },
+  });
+
+  const mailOptions = {
+    from: `"Wurkify App" <${config.emailUser}>`,
+    to: to,
+    subject: "Password Reset OTP - Wurkify",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #4CAF50;">Reset Your Password</h2>
+        <p>Hi there,</p>
+        <p>Please use the following One Time Password (OTP) to reset your password:</p>
+        <p style="font-size: 24px; font-weight: bold; color: #333; text-align: center; margin: 20px 0;">
+          ${otp}
+        </p>
+        <p>This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+        <p>Best regards,<br/>The Wurkify Team</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+const registerUser = async (req, res) => {
+  try {
+    const { name, email, password, phone, birthdate, gender, role } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, email, and password are required",
+      });
+    }
+
+    const emailRegex = /^\S+@\S+\.\S+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email format",
+      });
+    }
+
+    if (phone && !/^\d{10,15}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid phone number format",
+      });
+    }
+
+    if (gender && !["male", "female", "other"].includes(gender.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "Gender must be 'male', 'female', or 'other'",
+      });
+    }
+
+    if (role && !["seeker", "organizer"].includes(role.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "Role must be 'seeker' or 'organizer'",
+      });
+    }
+
+    const existingUser = await UserAuth.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is already registered",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    let parsedBirthdate = null;
+
+    if (birthdate) {
+      const m = moment(birthdate, "DD-MM-YYYY", true);
+      if (!m.isValid()) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid birthdate format. Use DD-MM-YYYY",
+        });
+      }
+      parsedBirthdate = m.toDate();
+    }
+
+    const newUser = await UserAuth.create({
+      name,
+      email,
+      password: hashedPassword,
+      phone: phone || null,
+      birthdate: parsedBirthdate,
+      gender: gender || null,
+      role: role || "seeker",
+    });
+
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    await UserVerification.create({
+      userId: newUser._id,
+      otp,
+    });
+
+    await sendOtpEmail(email, otp);
+
+    res.status(201).json({
+      success: true,
+      message: "User registered successfully. Please verify your email.",
+      userId: newUser._id,
+      newUser,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const verifyOtp = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+
+    if (!userId || !otp) {
+      return res
+        .status(400)
+        .json({ success: false, message: "userId and otp are required" });
+    }
+
+    const record = await UserVerification.findOne({ userId, otp });
+    if (!record) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    await UserAuth.updateOne({ _id: userId }, { $set: { isVerified: true } });
+    await UserVerification.deleteMany({ userId });
+
+    res
+      .status(200)
+      .json({ success: true, message: "Email verified successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const userLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
+    const emailRegex = /^\S+@\S+\.\S+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email format",
+      });
+    }
+
+    const user = await UserAuth.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email is required" });
+    }
+
+    const user = await UserAuth.findOne({ email });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Email not found" });
+    }
+
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    await UserVerification.findOneAndUpdate(
+      { userId: user._id },
+      { otp },
+      { upsert: true, new: true }
+    );
+
+    await sendResetOtpEmail(email, otp);
+
+    res.status(200).json({ success: true, message: "OTP sent to email" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const verifyForgotOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and OTP are required" });
+    }
+
+    const user = await UserAuth.findOne({ email });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Email not found" });
+    }
+
+    const record = await UserVerification.findOne({ userId: user._id, otp });
+    if (!record) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    res
+      .status(200)
+      .json({ success: true, message: "OTP verified successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and new password are required",
+      });
+    }
+
+    const user = await UserAuth.findOne({ email });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Email not found" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await UserAuth.updateOne(
+      { _id: user._id },
+      { $set: { password: hashedPassword } }
+    );
+    await UserVerification.deleteMany({ userId: user._id });
+
+    res
+      .status(200)
+      .json({ success: true, message: "Password reset successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+module.exports = {
+  registerUser,
+  verifyOtp,
+  userLogin,
+  forgotPassword,
+  verifyForgotOtp,
+  resetPassword,
+};
