@@ -4,6 +4,10 @@ const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const config = require("../config/nodemailer");
 const moment = require("moment");
+const jwt = require("jsonwebtoken");
+
+const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
+const JWT_EXPIRES_IN = "7d";
 
 const sendOtpEmail = async (to, otp) => {
   const transporter = nodemailer.createTransport({
@@ -231,9 +235,21 @@ const userLogin = async (req, res) => {
       });
     }
 
+    const token = jwt.sign(
+      {
+        _id: user._id,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
     res.status(200).json({
       success: true,
       message: "Login successful",
+      token,
       user: {
         _id: user._id,
         name: user.name,
