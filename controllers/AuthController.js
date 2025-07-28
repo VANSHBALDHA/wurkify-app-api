@@ -96,11 +96,29 @@ const registerUser = async (req, res) => {
       });
     }
 
-    if (phone && !/^\d{10,15}$/.test(phone)) {
+    const existingUser = await UserAuth.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: "Invalid phone number format",
+        message: "Email is already registered",
       });
+    }
+
+    if (phone) {
+      if (!/^\d{10,15}$/.test(phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid phone number format",
+        });
+      }
+
+      const existingPhoneUser = await UserAuth.findOne({ phone });
+      if (existingPhoneUser) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number is already registered",
+        });
+      }
     }
 
     if (gender && !["male", "female", "other"].includes(gender.toLowerCase())) {
@@ -114,14 +132,6 @@ const registerUser = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Role must be 'seeker' or 'organizer'",
-      });
-    }
-
-    const existingUser = await UserAuth.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is already registered",
       });
     }
 
@@ -237,7 +247,7 @@ const userLogin = async (req, res) => {
 
     const token = jwt.sign(
       {
-        _id: user._id,
+        _id: user._id.toString(),
         email: user.email,
         role: user.role,
         isVerified: user.isVerified,
@@ -255,6 +265,10 @@ const userLogin = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        name: user.name,
+        phone: user.phone,
+        birthdate: user.birthdate,
+        gender: user.gender,
       },
     });
   } catch (err) {
@@ -365,6 +379,80 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const deleteAccount = async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await UserAuth.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    await UserAuth.deleteOne({ _id: userId });
+    await UserVerification.deleteMany({ userId });
+
+    res.status(200).json({
+      success: true,
+      message: "Account deleted successfully",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const changePin = async (req, res) => {
+  try {
+    const { userId, oldPassword, newPassword } = req.body;
+
+    if (!userId || !oldPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "userId, oldPassword, and newPassword are required",
+      });
+    }
+
+    const user = await UserAuth.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Old password is incorrect",
+      });
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+    user.password = hashedNewPassword;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "PIN (password) changed successfully",
+    });
+  } catch (err) {
+    console.error("Change PIN error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 module.exports = {
   registerUser,
   verifyOtp,
@@ -372,4 +460,6 @@ module.exports = {
   forgotPassword,
   verifyForgotOtp,
   resetPassword,
+  deleteAccount,
+  changePin,
 };

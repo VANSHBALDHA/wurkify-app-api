@@ -10,6 +10,8 @@ const {
   forgotPassword,
   verifyForgotOtp,
   resetPassword,
+  deleteAccount,
+  changePin,
 } = require("../controllers/AuthController");
 
 router.post("/register", upload.none(), registerUser);
@@ -18,5 +20,7 @@ router.post("/login", upload.none(), userLogin);
 router.post("/forgot-password", upload.none(), forgotPassword);
 router.post("/verify-forgot-otp", upload.none(), verifyForgotOtp);
 router.post("/reset-password", upload.none(), resetPassword);
+router.delete("/delete-account", upload.none(), deleteAccount);
+router.post("/change-password", upload.none(), changePin);
 
 module.exports = router;
