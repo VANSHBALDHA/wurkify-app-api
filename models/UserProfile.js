@@ -6,6 +6,10 @@ const UserProfileSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  profile_img: {
+    type: String,
+    default: "",
+  },
   name: String,
   email: String,
   phone: String,

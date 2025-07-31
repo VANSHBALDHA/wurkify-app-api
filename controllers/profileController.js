@@ -126,6 +126,13 @@ const upsertProfile = async (req, res) => {
       education,
     } = req.body;
 
+    if (!req.file) {
+      return res.status(400).json({
+        message: "No image file uploaded",
+        success: false,
+      });
+    }
+
     let parsedSkills = [];
     let parsedEducation = {};
 
@@ -149,7 +156,11 @@ const upsertProfile = async (req, res) => {
       }
     }
 
+    const base64Image = req.file.buffer.toString("base64");
+    const mimeType = req.file.mimetype;
+
     const updateData = {
+      profile_img: `data:${mimeType};base64,${base64Image}`,
       name,
       email,
       phone,

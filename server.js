@@ -33,6 +33,7 @@ app.delete("/api/cache/clear", (req, res) => {
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/profile", require("./routes/profileRoutes"));
 app.use("/api/feedback", require("./routes/feedbackRoutes"));
+app.use("/api/events", require("./routes/eventRoutes"));
 
 app.use(cookieParser());
 app.use(errorMiddleware);

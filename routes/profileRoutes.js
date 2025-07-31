@@ -14,7 +14,7 @@ const {
 const authenticateUser = require("../middlewares/authenticateUser");
 
 router.post("/", upload.none(), getProfileDetails);
-router.post("/update-profile", upload.none(), upsertProfile);
+router.post("/update-profile", upload.single("profile_img"), upsertProfile);
 router.post("/social-links", upload.none(), updateSocialLinks);
 router.post("/documentation", upload.none(), upsertDocumentation);
 router.post("/bank-details", upload.none(), upsertBankDetails);
