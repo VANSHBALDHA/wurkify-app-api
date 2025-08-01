@@ -135,6 +135,15 @@ const getEventById = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
+    let alreadyApplied = false;
+    if (user.role === "seeker") {
+      const application = await EventApplication.findOne({
+        seeker_id: userId,
+        event_id: eventId,
+      });
+      if (application) alreadyApplied = true;
+    }
+
     return res.status(200).json({
       success: true,
       message: "Event fetched successfully",
@@ -154,6 +163,7 @@ const getEventById = async (req, res) => {
         eventStatus: event.eventStatus,
         organizer_name: event.organizer_name,
         createdAt: event.createdAt,
+        alreadyApplied,
       },
     });
   } catch (err) {
