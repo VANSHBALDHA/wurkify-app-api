@@ -29,9 +29,68 @@ const getEventList = async (req, res) => {
       events = await Event.find({ organizer_id: userId }).sort({
         createdAt: -1,
       });
+
+      const formattedEvents = events.map((event) => ({
+        event_id: event._id,
+        eventName: event.eventName,
+        eventDate: event.eventDate,
+        shiftTime: event.shiftTime,
+        dressCode: event.dressCode,
+        dressCodeDescription: event.dressCodeDescription,
+        paymentAmount: event.paymentAmount,
+        paymentClearanceDays: event.paymentClearanceDays,
+        workDescription: event.workDescription,
+        location: event.location,
+        requiredMemberCount: event.requiredMemberCount,
+        additionalNotes: event.additionalNotes,
+        eventStatus: event.eventStatus,
+        organizer_name: event.organizer_name,
+        createdAt: event.createdAt,
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: "Organizer events fetched successfully",
+        total: formattedEvents.length,
+        events: formattedEvents,
+      });
     } else if (user.role === "seeker") {
+      // 1. Get all applications for this seeker
+      const applications = await EventApplication.find({ seeker_id: userId });
+      const appliedEventIds = new Set(
+        applications.map((app) => app.event_id.toString())
+      );
+
+      // 2. Get all pending events
       events = await Event.find({ eventStatus: "pending" }).sort({
         createdAt: -1,
+      });
+
+      // 3. Format event list with alreadyApplied flag
+      const formattedEvents = events.map((event) => ({
+        event_id: event._id,
+        eventName: event.eventName,
+        eventDate: event.eventDate,
+        shiftTime: event.shiftTime,
+        dressCode: event.dressCode,
+        dressCodeDescription: event.dressCodeDescription,
+        paymentAmount: event.paymentAmount,
+        paymentClearanceDays: event.paymentClearanceDays,
+        workDescription: event.workDescription,
+        location: event.location,
+        requiredMemberCount: event.requiredMemberCount,
+        additionalNotes: event.additionalNotes,
+        eventStatus: event.eventStatus,
+        organizer_name: event.organizer_name,
+        createdAt: event.createdAt,
+        alreadyApplied: appliedEventIds.has(event._id.toString()), // ✅ new flag
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: "Seeker events fetched successfully",
+        total: formattedEvents.length,
+        events: formattedEvents,
       });
     } else {
       return res.status(403).json({
@@ -39,31 +98,6 @@ const getEventList = async (req, res) => {
         message: "Only organizers and seekers can view events",
       });
     }
-
-    const formattedEvents = events.map((event) => ({
-      event_id: event._id,
-      eventName: event.eventName,
-      eventDate: event.eventDate,
-      shiftTime: event.shiftTime,
-      dressCode: event.dressCode,
-      dressCodeDescription: event.dressCodeDescription,
-      paymentAmount: event.paymentAmount,
-      paymentClearanceDays: event.paymentClearanceDays,
-      workDescription: event.workDescription,
-      location: event.location,
-      requiredMemberCount: event.requiredMemberCount,
-      additionalNotes: event.additionalNotes,
-      eventStatus: event.eventStatus,
-      organizer_name: event.organizer_name,
-      createdAt: event.createdAt,
-    }));
-
-    return res.status(200).json({
-      success: true,
-      message: `${user.role} events fetched successfully`,
-      total: formattedEvents.length,
-      events: formattedEvents,
-    });
   } catch (err) {
     console.error("Get Event List Error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
