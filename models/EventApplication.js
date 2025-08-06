@@ -13,7 +13,7 @@ const eventApplicationSchema = new mongoose.Schema({
   },
   applicationStatus: {
     type: String,
-    enum: ["pending", "accepted", "rejected"],
+    enum: ["pending", "accepted", "rejected", "completed"],
     default: "pending",
   },
   appliedAt: { type: Date, default: Date.now },

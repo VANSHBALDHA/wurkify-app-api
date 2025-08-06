@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const Event = require("../models/Event");
 const UserAuth = require("../models/AuthUsers");
 const EventApplication = require("../models/EventApplication");
+const Notification = require("../models/Notification");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -55,42 +56,63 @@ const getEventList = async (req, res) => {
         events: formattedEvents,
       });
     } else if (user.role === "seeker") {
-      // 1. Get all applications for this seeker
+      const { applicationStatus } = req.query;
       const applications = await EventApplication.find({ seeker_id: userId });
-      const appliedEventIds = new Set(
-        applications.map((app) => app.event_id.toString())
-      );
 
-      // 2. Get all pending events
-      events = await Event.find({ eventStatus: "pending" }).sort({
-        createdAt: -1,
+      const applicationMap = new Map();
+      applications.forEach((app) => {
+        applicationMap.set(app.event_id.toString(), app.applicationStatus);
       });
 
+      // 2. Get all pending events
+      const events = await Event.find({}).sort({ createdAt: -1 });
+
+      if (events.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "No pending events found",
+          total: 0,
+          events: [],
+        });
+      }
+
       // 3. Format event list with alreadyApplied flag
-      const formattedEvents = events.map((event) => ({
-        event_id: event._id,
-        eventName: event.eventName,
-        eventDate: event.eventDate,
-        shiftTime: event.shiftTime,
-        dressCode: event.dressCode,
-        dressCodeDescription: event.dressCodeDescription,
-        paymentAmount: event.paymentAmount,
-        paymentClearanceDays: event.paymentClearanceDays,
-        workDescription: event.workDescription,
-        location: event.location,
-        requiredMemberCount: event.requiredMemberCount,
-        additionalNotes: event.additionalNotes,
-        eventStatus: event.eventStatus,
-        organizer_name: event.organizer_name,
-        createdAt: event.createdAt,
-        alreadyApplied: appliedEventIds.has(event._id.toString()), // ✅ new flag
-      }));
+      const formattedEvents = events.map((event) => {
+        const eventId = event._id.toString();
+        const appliedStatus = applicationMap.get(eventId);
+
+        return {
+          event_id: event._id,
+          eventName: event.eventName,
+          eventDate: event.eventDate,
+          shiftTime: event.shiftTime,
+          dressCode: event.dressCode,
+          dressCodeDescription: event.dressCodeDescription,
+          paymentAmount: event.paymentAmount,
+          paymentClearanceDays: event.paymentClearanceDays,
+          workDescription: event.workDescription,
+          location: event.location,
+          requiredMemberCount: event.requiredMemberCount,
+          additionalNotes: event.additionalNotes,
+          eventStatus: event.eventStatus,
+          organizer_name: event.organizer_name,
+          createdAt: event.createdAt,
+          alreadyApplied: applicationMap.has(eventId),
+          applicationStatus: appliedStatus || null,
+        };
+      });
+
+      const filteredEvents = applicationStatus
+        ? formattedEvents.filter(
+            (event) => event.applicationStatus === applicationStatus
+          )
+        : formattedEvents;
 
       return res.status(200).json({
         success: true,
         message: "Seeker events fetched successfully",
-        total: formattedEvents.length,
-        events: formattedEvents,
+        total: filteredEvents.length,
+        events: filteredEvents,
       });
     } else {
       return res.status(403).json({
@@ -508,11 +530,73 @@ const getSeekerRecentActivity = async (req, res) => {
         appliedAt: app.createdAt,
       }));
 
+    const totalApplied = await EventApplication.countDocuments({
+      seeker_id: seekerId,
+    });
+
+    const totalAccepted = await EventApplication.countDocuments({
+      seeker_id: seekerId,
+      status: "accepted",
+    });
+
+    const notificationCount = await Notification.countDocuments({
+      receiver_id: seekerId,
+      status: "unread",
+    });
+
+    const last12Months = Array.from({ length: 12 }).map((_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      return { month: d.getMonth() + 1, year: d.getFullYear() };
+    });
+
+    const graphData = await Promise.all(
+      last12Months.map(async ({ month, year }) => {
+        const start = new Date(year, month - 1, 1);
+        const end = new Date(year, month, 1);
+
+        const eventsInMonth = await EventApplication.countDocuments({
+          seeker_id: seekerId,
+          createdAt: { $gte: start, $lt: end },
+        });
+
+        const earningsInMonthAgg = await EventApplication.aggregate([
+          {
+            $match: {
+              seeker_id: seekerId,
+              status: "accepted",
+              createdAt: { $gte: start, $lt: end },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: "$amountPaid" },
+            },
+          },
+        ]);
+
+        const earningsInMonth = earningsInMonthAgg[0]?.total || 0;
+
+        return {
+          month: `${year}-${month.toString().padStart(2, "0")}`,
+          events: eventsInMonth,
+          earnings: earningsInMonth,
+        };
+      })
+    );
+
     return res.status(200).json({
       success: true,
       message: "Seeker recent activity fetched successfully",
       total: recentActivity.length,
       activity: recentActivity,
+      stats: {
+        totalApplied,
+        totalAccepted,
+        notificationCount,
+        graphData: graphData.reverse(), // Latest first
+      },
     });
   } catch (err) {
     console.error("Get Seeker Recent Activity Error:", err);
