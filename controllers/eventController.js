@@ -282,6 +282,104 @@ const createEvent = async (req, res) => {
   }
 };
 
+const editEvent = async (req, res) => {
+  try {
+    const {
+      eventId,
+      eventName,
+      eventDate,
+      shiftTime,
+      dressCode,
+      dressCodeDescription,
+      paymentAmount,
+      paymentClearanceDays,
+      workDescription,
+      location,
+      requiredMemberCount,
+      additionalNotes,
+    } = req.body;
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, message: "Invalid token" });
+    }
+
+    const userId = decoded._id;
+
+    const user = await UserAuth.findById(userId);
+    if (!user || user.role !== "organizer") {
+      return res.status(403).json({
+        success: false,
+        message: "Only organizers are allowed to edit events",
+      });
+    }
+
+    if (!eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "Event ID is required",
+      });
+    }
+
+    const updateData = {
+      eventName,
+      eventDate,
+      shiftTime,
+      dressCode: dressCode === "Yes" || dressCode === true,
+      paymentAmount,
+      paymentClearanceDays,
+      workDescription,
+      location,
+      requiredMemberCount,
+      additionalNotes,
+    };
+
+    // If dressCode is true, description is required
+    if (updateData.dressCode) {
+      if (!dressCodeDescription) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Dress code description is required when dress code is 'Yes'",
+        });
+      }
+      updateData.dressCodeDescription = dressCodeDescription;
+    } else {
+      updateData.dressCodeDescription = null;
+    }
+
+    const updatedEvent = await Event.findOneAndUpdate(
+      { _id: eventId, organizer_id: userId },
+      { $set: updateData },
+      { new: true }
+    );
+
+    if (!updatedEvent) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or you don't have permission to edit it",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Event updated successfully",
+      event: updatedEvent,
+    });
+  } catch (err) {
+    console.error("Edit Event Error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 const updateEventStatus = async (req, res) => {
   try {
     const { eventId, status } = req.body;
@@ -739,6 +837,7 @@ module.exports = {
   getEventList,
   getEventById,
   createEvent,
+  editEvent,
   updateEventStatus,
   getRecentEvents,
   deleteEvent,

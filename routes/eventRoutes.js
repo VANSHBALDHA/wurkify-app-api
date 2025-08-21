@@ -4,6 +4,7 @@ const {
   getEventList,
   getEventById,
   createEvent,
+  editEvent,
   updateEventStatus,
   getRecentEvents,
   deleteEvent,
@@ -19,6 +20,7 @@ const upload = multer({ storage });
 router.get("/list", upload.none(), getEventList);
 router.post("/view", upload.none(), getEventById);
 router.post("/create-event", upload.none(), createEvent);
+router.post("/edit-event", upload.none(), editEvent);
 router.post("/update-status", upload.none(), updateEventStatus);
 router.post("/recent", upload.none(), getRecentEvents);
 router.post("/delete", upload.none(), deleteEvent);
