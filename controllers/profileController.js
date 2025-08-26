@@ -1,6 +1,7 @@
 const UserAuth = require("../models/AuthUsers");
 const UserProfile = require("../models/UserProfile");
 const jwt = require("jsonwebtoken");
+const moment = require("moment");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -155,6 +156,17 @@ const upsertProfile = async (req, res) => {
           .json({ success: false, message: "Invalid education JSON" });
       }
     }
+    let parsedBirthdate = null;
+    if (birthdate) {
+      const m = moment(birthdate, "DD-MM-YYYY", true);
+      if (!m.isValid()) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid birthdate format. Use DD-MM-YYYY",
+        });
+      }
+      parsedBirthdate = m.toDate();
+    }
 
     const base64Image = req.file.buffer.toString("base64");
     const mimeType = req.file.mimetype;
@@ -164,7 +176,7 @@ const upsertProfile = async (req, res) => {
       name,
       email,
       phone,
-      birthdate,
+      birthdate: parsedBirthdate,
       age,
       gender,
       weight,

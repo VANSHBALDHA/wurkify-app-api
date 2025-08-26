@@ -13,7 +13,10 @@ const UserProfileSchema = new mongoose.Schema({
   name: String,
   email: String,
   phone: String,
-  birthdate: Date,
+  birthdate: {
+    type: Date,
+    default: null,
+  },
   age: Number,
   gender: String,
   weight: Number,

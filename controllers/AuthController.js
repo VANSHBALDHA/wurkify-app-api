@@ -5,6 +5,7 @@ const nodemailer = require("nodemailer");
 const config = require("../config/nodemailer");
 const moment = require("moment");
 const jwt = require("jsonwebtoken");
+const UserProfile = require("../models/UserProfile");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 const JWT_EXPIRES_IN = "7d";
@@ -186,27 +187,49 @@ const verifyOtp = async (req, res) => {
     const { userId, otp } = req.body;
 
     if (!userId || !otp) {
-      return res
-        .status(400)
-        .json({ success: false, message: "userId and otp are required" });
+      return res.status(400).json({
+        success: false,
+        message: "userId and otp are required",
+      });
+    }
+
+    const user = await UserAuth.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     const record = await UserVerification.findOne({ userId, otp });
     if (!record) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid or expired OTP" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP",
+      });
+    }
+
+    if (record.expiresAt && record.expiresAt < Date.now()) {
+      await UserVerification.deleteMany({ userId });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP",
+      });
     }
 
     await UserAuth.updateOne({ _id: userId }, { $set: { isVerified: true } });
     await UserVerification.deleteMany({ userId });
 
-    res
-      .status(200)
-      .json({ success: true, message: "Email verified successfully" });
+    return res.status(200).json({
+      success: true,
+      message: "Email verified successfully",
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("Verify OTP Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 

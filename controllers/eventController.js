@@ -3,6 +3,7 @@ const Event = require("../models/Event");
 const UserAuth = require("../models/AuthUsers");
 const EventApplication = require("../models/EventApplication");
 const Notification = require("../models/Notification");
+const UserProfile = require("../models/UserProfile");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -24,12 +25,17 @@ const getEventList = async (req, res) => {
         .json({ success: false, message: "User not found" });
     }
 
+    const { eventStatus, applicationStatus } = req.query;
+
     let events;
 
     if (user.role === "organizer") {
-      events = await Event.find({ organizer_id: userId }).sort({
-        createdAt: -1,
-      });
+      const query = { organizer_id: userId };
+      if (eventStatus && eventStatus !== "all") {
+        query.eventStatus = eventStatus;
+      }
+
+      events = await Event.find(query).sort({ createdAt: -1 });
 
       const formattedEvents = events.map((event) => ({
         event_id: event._id,
@@ -56,7 +62,6 @@ const getEventList = async (req, res) => {
         events: formattedEvents,
       });
     } else if (user.role === "seeker") {
-      const { applicationStatus } = req.query;
       const applications = await EventApplication.find({ seeker_id: userId });
 
       const applicationMap = new Map();
@@ -64,19 +69,22 @@ const getEventList = async (req, res) => {
         applicationMap.set(app.event_id.toString(), app.applicationStatus);
       });
 
-      // 2. Get all pending events
-      const events = await Event.find({}).sort({ createdAt: -1 });
+      const query = {};
+      if (eventStatus && eventStatus !== "all") {
+        query.eventStatus = eventStatus;
+      }
+
+      const events = await Event.find(query).sort({ createdAt: -1 });
 
       if (events.length === 0) {
         return res.status(200).json({
           success: true,
-          message: "No pending events found",
+          message: "No events found",
           total: 0,
           events: [],
         });
       }
 
-      // 3. Format event list with alreadyApplied flag
       const formattedEvents = events.map((event) => {
         const eventId = event._id.toString();
         const appliedStatus = applicationMap.get(eventId);
@@ -134,9 +142,30 @@ const getEventById = async (req, res) => {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded._id;
+    let decoded;
 
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired. Please log in again.",
+        });
+      }
+      if (err.name === "JsonWebTokenError") {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid token. Please log in again.",
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        message: "Authentication failed.",
+      });
+    }
+
+    const userId = decoded._id;
     const user = await UserAuth.findById(userId);
     if (!user) {
       return res
@@ -423,65 +452,6 @@ const updateEventStatus = async (req, res) => {
   }
 };
 
-const getRecentEvents = async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded._id;
-
-    const user = await UserAuth.findById(userId);
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
-
-    if (user.role !== "organizer") {
-      return res.status(403).json({
-        success: false,
-        message: "Only organizers can access recent activity",
-      });
-    }
-
-    const events = await Event.find({ organizer_id: userId })
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    const formattedEvents = events.map((event) => ({
-      event_id: event._id,
-      eventName: event.eventName,
-      eventDate: event.eventDate,
-      shiftTime: event.shiftTime,
-      dressCode: event.dressCode,
-      dressCodeDescription: event.dressCodeDescription,
-      paymentAmount: event.paymentAmount,
-      paymentClearanceDays: event.paymentClearanceDays,
-      workDescription: event.workDescription,
-      location: event.location,
-      requiredMemberCount: event.requiredMemberCount,
-      additionalNotes: event.additionalNotes,
-      eventStatus: event.eventStatus,
-      organizer_name: event.organizer_name,
-      createdAt: event.createdAt,
-    }));
-
-    return res.status(200).json({
-      success: true,
-      message: "Recent events fetched successfully",
-      total: formattedEvents.length,
-      events: formattedEvents,
-    });
-  } catch (err) {
-    console.error("Get Recent Events Error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-};
-
 const deleteEvent = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -539,9 +509,27 @@ const applyToEvent = async (req, res) => {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const seekerId = decoded._id;
+    let decoded;
 
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired. Please log in again.",
+        });
+      }
+      if (err.name === "JsonWebTokenError") {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid token. Please log in again.",
+        });
+      }
+      throw err;
+    }
+
+    const seekerId = decoded._id;
     const seeker = await UserAuth.findById(seekerId);
     if (!seeker || seeker.role !== "seeker") {
       return res
@@ -720,7 +708,8 @@ const getApplicantsByEvent = async (req, res) => {
         .json({ success: false, message: "Only organizers can access this" });
     }
 
-    const { eventId } = req.body;
+    const { eventId, filter } = req.body;
+
     if (!eventId) {
       return res
         .status(400)
@@ -731,6 +720,7 @@ const getApplicantsByEvent = async (req, res) => {
       _id: eventId,
       organizer_id: organizerId,
     });
+
     if (!event) {
       return res.status(404).json({
         success: false,
@@ -738,9 +728,15 @@ const getApplicantsByEvent = async (req, res) => {
       });
     }
 
-    const applications = await EventApplication.find({
-      event_id: eventId,
-    }).populate("seeker_id", "name email phone gender birthdate role");
+    let query = { event_id: eventId };
+    if (filter && filter !== "all") {
+      query.applicationStatus = filter;
+    }
+
+    const applications = await EventApplication.find(query).populate(
+      "seeker_id",
+      "name email phone gender birthdate role"
+    );
 
     const seekers = applications.map((app) => ({
       seeker_id: app.seeker_id._id,
@@ -751,12 +747,13 @@ const getApplicantsByEvent = async (req, res) => {
       birthdate: app.seeker_id.birthdate,
       role: app.seeker_id.role,
       appliedAt: app.createdAt,
+      updatedStatus: app.applicationStatus || "pending",
     }));
 
     return res.status(200).json({
       success: true,
       message: "Applicants fetched successfully",
-      total: seekers.length,
+      total: seekers?.length,
       applicants: seekers,
     });
   } catch (err) {
@@ -773,9 +770,30 @@ const updateApplicationStatus = async (req, res) => {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const organizerId = decoded._id;
+    let decoded;
 
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired. Please log in again.",
+        });
+      }
+      if (err.name === "JsonWebTokenError") {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid token. Please log in again.",
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        message: "Authentication failed.",
+      });
+    }
+
+    const organizerId = decoded._id;
     const user = await UserAuth.findById(organizerId);
     if (!user || user.role !== "organizer") {
       return res.status(403).json({ success: false, message: "Access denied" });
@@ -833,16 +851,182 @@ const updateApplicationStatus = async (req, res) => {
   }
 };
 
+const getOrganizerDashboard = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const organizerId = decoded._id;
+
+    const user = await UserAuth.findById(organizerId);
+    if (!user || user.role !== "organizer") {
+      return res.status(403).json({
+        success: false,
+        message: "Only organizers can access the dashboard",
+      });
+    }
+
+    const totalRegistered = await Event.countDocuments({
+      organizer_id: organizerId,
+    });
+    const totalCompleted = await Event.countDocuments({
+      organizer_id: organizerId,
+      eventStatus: "completed",
+    });
+    const totalInProgress = await Event.countDocuments({
+      organizer_id: organizerId,
+      eventStatus: "pending",
+    });
+
+    const totalSpendAgg = await Event.aggregate([
+      { $match: { organizer_id: user._id } },
+      { $group: { _id: null, total: { $sum: "$paymentAmount" } } },
+    ]);
+    const totalSpend = totalSpendAgg[0]?.total || 0;
+
+    const analytics = await Event.aggregate([
+      { $match: { organizer_id: user._id } },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+          },
+          completed: {
+            $sum: { $cond: [{ $eq: ["$eventStatus", "completed"] }, 1, 0] },
+          },
+          moneySpend: { $sum: "$paymentAmount" },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
+    ]);
+
+    const eventAnalytics = analytics.map((item) => ({
+      month: `${item._id.year}-${item._id.month.toString().padStart(2, "0")}`,
+      completed: item.completed,
+      moneySpend: item.moneySpend,
+    }));
+
+    const recentEvents = await Event.find({ organizer_id: user._id })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    const formattedRecentEvents = recentEvents.map((event) => ({
+      event_id: event._id,
+      eventName: event.eventName,
+      eventDate: event.eventDate,
+      shiftTime: event.shiftTime,
+      dressCode: event.dressCode,
+      dressCodeDescription: event.dressCodeDescription,
+      paymentAmount: event.paymentAmount,
+      paymentClearanceDays: event.paymentClearanceDays,
+      workDescription: event.workDescription,
+      location: event.location,
+      requiredMemberCount: event.requiredMemberCount,
+      additionalNotes: event.additionalNotes,
+      eventStatus: event.eventStatus,
+      organizer_name: event.organizer_name,
+      createdAt: event.createdAt,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: "Organizer dashboard data fetched successfully",
+      summary: {
+        totalRegistered,
+        totalCompleted,
+        totalInProgress,
+        totalSpend,
+      },
+      analytics: eventAnalytics,
+      recentActivity: formattedRecentEvents,
+    });
+  } catch (err) {
+    console.error("Organizer Dashboard Error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const viewSeekerDetails = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    let decoded;
+
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Session expired. Please log in again.",
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token. Please log in again.",
+      });
+    }
+
+    const organizerId = decoded._id;
+    const user = await UserAuth.findById(organizerId);
+    const profile = await UserProfile.findOne({ organizerId });
+
+    return res.status(200).json({
+      success: true,
+      message: "Seeker details fetched successfully",
+      data: {
+        user_id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        birthdate: user.birthdate,
+        gender: user.gender,
+        role: user.role,
+
+        age: profile?.age || null,
+        city: profile?.city || null,
+        state: profile?.state || null,
+        height: profile?.height || null,
+        weight: profile?.weight || null,
+        skills: profile?.skills || [],
+        education: profile?.education || {},
+        socialLinks: profile?.socialLinks || {
+          instagram: "",
+          twitter: "",
+          facebook: "",
+          linkedin: "",
+        },
+        documentation: profile?.documentation || null,
+        bankDetails: profile?.bankDetails || null,
+        workExperience: profile?.workExperience || [],
+      },
+    });
+  } catch (err) {
+    console.error("View Seeker Details Error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 module.exports = {
   getEventList,
   getEventById,
   createEvent,
   editEvent,
   updateEventStatus,
-  getRecentEvents,
   deleteEvent,
   applyToEvent,
   getSeekerRecentActivity,
   getApplicantsByEvent,
   updateApplicationStatus,
+  getOrganizerDashboard,
+  viewSeekerDetails,
 };
