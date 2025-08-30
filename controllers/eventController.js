@@ -953,32 +953,24 @@ const getOrganizerDashboard = async (req, res) => {
 
 const viewSeekerDetails = async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
+    const { user_id } = req.body;
 
-    const token = authHeader.split(" ")[1];
-    let decoded;
-
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-      if (err.name === "TokenExpiredError") {
-        return res.status(401).json({
-          success: false,
-          message: "Session expired. Please log in again.",
-        });
-      }
-      return res.status(401).json({
+    if (!user_id) {
+      return res.status(400).json({
         success: false,
-        message: "Invalid token. Please log in again.",
+        message: "user_id is required",
       });
     }
 
-    const organizerId = decoded._id;
-    const user = await UserAuth.findById(organizerId);
-    const profile = await UserProfile.findOne({ organizerId });
+    const user = await UserAuth.findById(user_id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const profile = await UserProfile.findOne({ organizerId: user_id });
 
     return res.status(200).json({
       success: true,
