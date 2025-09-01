@@ -64,6 +64,7 @@ const getProfileDetails = async (req, res) => {
         birthdate: user.birthdate,
         gender: user.gender,
         role: user.role,
+        profile_img: profile?.profile_img || "",
 
         age: profile?.age || null,
         city: profile?.city || null,
