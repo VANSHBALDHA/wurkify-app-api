@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const Group = require("../models/Group");
 const Message = require("../models/Message");
 const UserProfile = require("../models/UserProfile");
+const admin = require("../firebase");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -42,6 +43,37 @@ const sendMessage = async (req, res) => {
       sender_id: userId,
       text,
     });
+
+    for (let memberId of group.members) {
+      if (memberId.toString() !== userId.toString()) {
+        const userProfile = await UserProfile.findOne(
+          { userId: memberId },
+          "fcm_token"
+        );
+
+        if (userProfile?.fcm_token) {
+          const payload = {
+            notification: {
+              title: "New Message",
+              body: text,
+            },
+            data: {
+              groupId: groupId.toString(),
+              senderId: userId.toString(),
+            },
+          };
+
+          try {
+            await admin
+              .messaging()
+              .sendToDevice(userProfile.fcm_token, payload);
+            console.log(`✅ Notification sent to ${memberId}`);
+          } catch (error) {
+            console.error("❌ Error sending notification:", error);
+          }
+        }
+      }
+    }
 
     group.members.forEach((memberId) => {
       const socketId = onlineUsers.get(memberId.toString());

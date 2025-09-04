@@ -235,7 +235,7 @@ const verifyOtp = async (req, res) => {
 
 const userLogin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, fcm_token } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -268,6 +268,14 @@ const userLogin = async (req, res) => {
       });
     }
 
+    if (fcm_token) {
+      await UserProfile.findOneAndUpdate(
+        { userId: user._id },
+        { fcm_token },
+        { upsert: true, new: true, runValidators: true }
+      );
+    }
+
     const token = jwt.sign(
       {
         _id: user._id.toString(),
@@ -289,14 +297,14 @@ const userLogin = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        name: user.name,
         phone: user.phone,
         birthdate: user.birthdate,
         gender: user.gender,
+        fcm_token: fcm_token || null,
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Login Error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
