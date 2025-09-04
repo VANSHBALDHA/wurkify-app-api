@@ -4,6 +4,8 @@ const UserAuth = require("../models/AuthUsers");
 const EventApplication = require("../models/EventApplication");
 const Notification = require("../models/Notification");
 const UserProfile = require("../models/UserProfile");
+const Group = require("../models/Group");
+const { io, onlineUsers } = require("../server");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -833,6 +835,32 @@ const updateApplicationStatus = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Application not found" });
+    }
+
+    if (status === "accepted") {
+      let group = await Group.findOne({ event_id: eventId });
+
+      if (!group) {
+        group = await Group.create({
+          event_id: eventId,
+          organizer_id: organizerId,
+          members: [organizerId, applicationId],
+        });
+      } else {
+        if (!group.members.includes(applicationId)) {
+          group.members.push(applicationId);
+          await group.save();
+        }
+      }
+      const applicantSocket = global.onlineUsers.get(applicationId.toString());
+      if (applicantSocket) {
+        global.io.to(applicantSocket).emit("notification", {
+          type: "group-join",
+          message: `🎉 You have been added to event group: ${event.eventName}`,
+          eventId: eventId,
+          groupId: group._id,
+        });
+      }
     }
 
     return res.status(200).json({

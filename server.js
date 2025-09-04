@@ -6,6 +6,8 @@ const cors = require("cors");
 const NodeCache = require("node-cache");
 const cookieParser = require("cookie-parser");
 const serverless = require("serverless-http");
+const http = require("http");
+const { Server } = require("socket.io");
 
 dotenv.config();
 
@@ -18,6 +20,38 @@ var corsOptions = {
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
+
+let onlineUsers = new Map();
+
+io.on("connection", (socket) => {
+  console.log("⚡ User connected:", socket.id);
+
+  socket.on("join", (userId) => {
+    onlineUsers.set(userId.toString(), socket.id); // ensure string key
+    console.log(`User ${userId} joined with socket ${socket.id}`);
+  });
+
+  socket.on("disconnect", () => {
+    for (let [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        console.log(`User ${userId} disconnected`);
+        break;
+      }
+    }
+  });
+});
+
+global.io = io;
+global.onlineUsers = onlineUsers;
 
 app.use(cors(corsOptions));
 app.use(express.json());
@@ -35,6 +69,8 @@ app.use("/api/profile", require("./routes/profileRoutes"));
 app.use("/api/feedback", require("./routes/feedbackRoutes"));
 app.use("/api/events", require("./routes/eventRoutes"));
 app.use("/api/payment", require("./routes/paymetRoutes"));
+app.use("/api/attendees", require("./routes/attendee"));
+app.use("/api/messages", require("./routes/messageRoutes"));
 
 app.use(cookieParser());
 app.use(errorMiddleware);
