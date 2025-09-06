@@ -41,6 +41,10 @@ const userAuthSchema = new mongoose.Schema(
       enum: ["seeker", "organizer"],
       default: "seeker",
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

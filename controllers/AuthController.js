@@ -159,6 +159,7 @@ const registerUser = async (req, res) => {
       birthdate: parsedBirthdate,
       gender: gender || null,
       role: role || "seeker",
+      isVerified: false,
     });
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -265,6 +266,13 @@ const userLogin = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Invalid password",
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Please verify your email with OTP before logging in",
       });
     }
 
