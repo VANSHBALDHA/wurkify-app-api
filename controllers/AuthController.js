@@ -20,6 +20,9 @@ const sendOtpEmail = async (to, otp) => {
       user: config.emailUser,
       pass: config.emailPassword,
     },
+    tls: {
+      rejectUnauthorized: false,
+    },
   });
 
   const mailOptions = {
