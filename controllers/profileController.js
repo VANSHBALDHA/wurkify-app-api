@@ -2,6 +2,13 @@ const UserAuth = require("../models/AuthUsers");
 const UserProfile = require("../models/UserProfile");
 const jwt = require("jsonwebtoken");
 const moment = require("moment");
+const cloudinary = require("cloudinary").v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -158,9 +165,15 @@ const upsertProfile = async (req, res) => {
       parsedBirthdate = m.toDate();
     }
 
-    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${
-      req.file.filename
-    }`;
+    let imageUrl = null;
+    if (req.file) {
+      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
+        folder: "profile_images",
+        resource_type: "image",
+      });
+
+      imageUrl = uploadResult.secure_url;
+    }
 
     const updateData = {
       profile_img: imageUrl,
