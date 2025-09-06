@@ -64,8 +64,6 @@ app.delete("/api/cache/clear", (req, res) => {
   res.status(200).json({ message: "Cache cleared successfully!" });
 });
 
-app.use("/uploads", express.static("uploads"));
-
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/profile", require("./routes/profileRoutes"));
 app.use("/api/feedback", require("./routes/feedbackRoutes"));
