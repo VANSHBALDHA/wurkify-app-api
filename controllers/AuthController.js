@@ -188,16 +188,16 @@ const registerUser = async (req, res) => {
 
 const verifyOtp = async (req, res) => {
   try {
-    const { userId, otp } = req.body;
+    const { email, otp } = req.body;
 
-    if (!userId || !otp) {
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: "userId and otp are required",
+        message: "Email and OTP are required",
       });
     }
 
-    const user = await UserAuth.findById(userId);
+    const user = await UserAuth.findOne({ email });
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -205,7 +205,11 @@ const verifyOtp = async (req, res) => {
       });
     }
 
-    const record = await UserVerification.findOne({ userId, otp });
+    const record = await UserVerification.findOne({
+      userId: user._id,
+      otp,
+    });
+
     if (!record) {
       return res.status(400).json({
         success: false,
@@ -214,15 +218,16 @@ const verifyOtp = async (req, res) => {
     }
 
     if (record.expiresAt && record.expiresAt < Date.now()) {
-      await UserVerification.deleteMany({ userId });
+      await UserVerification.deleteMany({ userId: user._id });
       return res.status(400).json({
         success: false,
         message: "Invalid or expired OTP",
       });
     }
 
-    await UserAuth.updateOne({ _id: userId }, { $set: { isVerified: true } });
-    await UserVerification.deleteMany({ userId });
+    await UserAuth.updateOne({ _id: user._id }, { $set: { isVerified: true } });
+
+    await UserVerification.deleteMany({ userId: user._id });
 
     return res.status(200).json({
       success: true,
