@@ -50,9 +50,6 @@ const submitCheckin = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Event not found" });
 
-    // const base64Image = req.file.buffer.toString("base64");
-    // const mimeType = req.file.mimetype;
-
     let imageUrl = null;
     if (req.file) {
       const streamUpload = () => {
@@ -78,9 +75,13 @@ const submitCheckin = async (req, res) => {
     const checkin = await AttendeeCheckin.findOneAndUpdate(
       { eventId, userId },
       {
-        checkinSelfie: imageUrl,
-        checkinTime: new Date(),
-        checkinStatus: "pending",
+        $push: {
+          sessions: {
+            checkinSelfie: imageUrl,
+            checkinTime: new Date(),
+            checkinStatus: "pending",
+          },
+        },
       },
       { new: true, upsert: true }
     );
@@ -110,9 +111,7 @@ const submitCheckout = async (req, res) => {
       });
     }
 
-    // const base64Image = req.file.buffer.toString("base64");
-    // const mimeType = req.file.mimetype;
-
+    // Upload image to Cloudinary
     let imageUrl = null;
     if (req.file) {
       const streamUpload = () => {
@@ -120,42 +119,45 @@ const submitCheckout = async (req, res) => {
           const stream = cloudinary.uploader.upload_stream(
             { folder: "profile_images", resource_type: "image" },
             (error, result) => {
-              if (result) {
-                resolve(result);
-              } else {
-                reject(error);
-              }
+              if (result) resolve(result);
+              else reject(error);
             }
           );
           streamifier.createReadStream(req.file.buffer).pipe(stream);
         });
       };
-
       const result = await streamUpload();
       imageUrl = result.secure_url;
     }
 
-    const attendee = await AttendeeCheckin.findOneAndUpdate(
-      { eventId, userId },
-      {
-        checkoutSelfie: imageUrl,
-        checkoutTime: new Date(),
-        checkoutStatus: "pending",
-      },
-      { new: true }
-    );
-
-    if (!attendee) {
+    // Find the last open session manually
+    const record = await AttendeeCheckin.findOne({ eventId, userId });
+    if (!record || record.sessions.length === 0) {
       return res.status(400).json({
         success: false,
         message: "You must check-in before check-out",
       });
     }
 
+    const lastSession = record.sessions[record.sessions.length - 1];
+    if (lastSession.checkoutTime) {
+      return res.status(400).json({
+        success: false,
+        message: "No active check-in found to checkout",
+      });
+    }
+
+    // Update last session
+    lastSession.checkoutSelfie = imageUrl;
+    lastSession.checkoutTime = new Date();
+    lastSession.checkoutStatus = "pending";
+
+    await record.save();
+
     res.status(201).json({
       success: true,
       message: "Check-out submitted, waiting for organizer approval",
-      attendee,
+      attendee: record,
     });
   } catch (err) {
     console.error("Submit Checkout Error:", err);
@@ -176,22 +178,27 @@ const getMyAttendanceStatus = async (req, res) => {
         message: "eventId is required",
       });
     }
-    const record = await AttendeeCheckin.findOne({ eventId, userId });
 
-    if (!record) {
+    const record = await AttendeeCheckin.findOne({ eventId, userId });
+    if (!record || record.sessions.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "No attendance found" });
     }
 
+    const lastSession = record.sessions[record.sessions.length - 1];
+
     res.status(200).json({
       success: true,
       attendance: {
-        checkinStatus: record.checkinStatus,
-        checkinTime: formatDateTime(record.checkinTime),
-        checkoutStatus: record.checkoutStatus,
-        checkoutTime: formatDateTime(record.checkoutTime),
-        duration: calculateDuration(record.checkinTime, record.checkoutTime),
+        checkinStatus: lastSession.checkinStatus,
+        checkinTime: formatDateTime(lastSession.checkinTime),
+        checkoutStatus: lastSession.checkoutStatus,
+        checkoutTime: formatDateTime(lastSession.checkoutTime),
+        duration: calculateDuration(
+          lastSession.checkinTime,
+          lastSession.checkoutTime
+        ),
       },
     });
   } catch (err) {
@@ -214,17 +221,34 @@ const getPendingAttendance = async (req, res) => {
     }
 
     const { eventId } = req.body;
-    const records = await AttendeeCheckin.find({
-      eventId,
-      $or: [{ checkinStatus: "pending" }, { checkoutStatus: "pending" }],
-    }).populate("userId", "name email");
+
+    const records = await AttendeeCheckin.find({ eventId }).populate(
+      "userId",
+      "name email"
+    );
+
+    // Extract pending sessions
+    const pending = [];
+    records.forEach((r) => {
+      r.sessions.forEach((s) => {
+        if (s.checkinStatus === "pending" || s.checkoutStatus === "pending") {
+          pending.push({
+            recordId: r._id,
+            user: r.userId,
+            sessionId: s._id,
+            checkinTime: formatDateTime(s.checkinTime),
+            checkoutTime: formatDateTime(s.checkoutTime),
+            checkinStatus: s.checkinStatus,
+            checkoutStatus: s.checkoutStatus,
+            duration: calculateDuration(s.checkinTime, s.checkoutTime),
+          });
+        }
+      });
+    });
 
     res.status(200).json({
       success: true,
-      records: records.map((r) => ({
-        ...r.toObject(),
-        duration: calculateDuration(r.checkinTime, r.checkoutTime),
-      })),
+      records: pending,
     });
   } catch (err) {
     console.error("Get Pending Attendance Error:", err);
@@ -245,7 +269,7 @@ const updateAttendanceStatus = async (req, res) => {
         .json({ success: false, message: "Only organizers allowed" });
     }
 
-    const { recordId, type, status } = req.body;
+    const { recordId, sessionId, type, status } = req.body;
     if (!["approved", "rejected"].includes(status)) {
       return res
         .status(400)
@@ -253,16 +277,15 @@ const updateAttendanceStatus = async (req, res) => {
     }
 
     let updateField = {};
-    if (type === "checkin") updateField.checkinStatus = status;
-    else if (type === "checkout") updateField.checkoutStatus = status;
+    if (type === "checkin") updateField["sessions.$.checkinStatus"] = status;
+    else if (type === "checkout")
+      updateField["sessions.$.checkoutStatus"] = status;
     else
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid type provided" });
+      return res.status(400).json({ success: false, message: "Invalid type" });
 
-    const record = await AttendeeCheckin.findByIdAndUpdate(
-      recordId,
-      updateField,
+    const record = await AttendeeCheckin.findOneAndUpdate(
+      { _id: recordId, "sessions._id": sessionId },
+      { $set: updateField },
       { new: true }
     ).populate("userId", "name email");
 
@@ -275,10 +298,7 @@ const updateAttendanceStatus = async (req, res) => {
     res.status(200).json({
       success: true,
       message: `${type} ${status}`,
-      record: {
-        ...record.toObject(),
-        duration: calculateDuration(record.checkinTime, record.checkoutTime),
-      },
+      record,
     });
   } catch (err) {
     console.error("Update Attendance Status Error:", err);
@@ -331,6 +351,54 @@ const getAcceptedEventList = async (req, res) => {
   }
 };
 
+const getMyTimesheet = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded._id;
+
+    const { eventId } = req.body;
+    if (!eventId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "eventId is required" });
+    }
+
+    const record = await AttendeeCheckin.findOne({ eventId, userId });
+    if (!record || record.sessions.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No attendance found" });
+    }
+
+    // Build timesheet list with statuses
+    const timesheet = record.sessions.map((s) => ({
+      clock_in: s.checkinTime,
+      clock_out: s.checkoutTime || null,
+      checkin_status: s.checkinStatus,
+      checkout_status: s.checkoutStatus,
+      total_hours:
+        s.checkinTime && s.checkoutTime
+          ? (
+              (new Date(s.checkoutTime) - new Date(s.checkinTime)) /
+              3600000
+            ).toFixed(2)
+          : "0.00",
+    }));
+
+    const lastSession = record.sessions[record.sessions.length - 1];
+    const status = lastSession.checkoutTime ? "checkout" : "checkin";
+
+    res.status(200).json({
+      status,
+      timesheet,
+    });
+  } catch (err) {
+    console.error("Get Attendance Timesheet Error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 module.exports = {
   submitCheckin,
   submitCheckout,
@@ -338,4 +406,5 @@ module.exports = {
   getPendingAttendance,
   updateAttendanceStatus,
   getAcceptedEventList,
+  getMyTimesheet,
 };

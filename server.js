@@ -117,7 +117,8 @@ module.exports.handler = handler;
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`🚀 Server is running on http://localhost:${PORT}`);
+    console.log(`🔌 Socket.IO server is ready for WebSocket connections`);
   });
 }
