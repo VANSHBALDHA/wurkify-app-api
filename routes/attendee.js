@@ -11,6 +11,7 @@ const {
   getMyAttendanceStatus,
   getPendingAttendance,
   updateAttendanceStatus,
+  getAcceptedEventList,
 } = require("../controllers/AttendeeController");
 
 router.post("/checkin", upload.single("checkinSelfie"), submitCheckin);
@@ -18,5 +19,6 @@ router.post("/checkout", upload.single("checkoutSelfie"), submitCheckout);
 router.post("/my-status", upload.none(), getMyAttendanceStatus);
 router.post("/pending", upload.none(), getPendingAttendance);
 router.post("/update-status", upload.none(), updateAttendanceStatus);
+router.get("/accepted-events", upload.none(), getAcceptedEventList);
 
 module.exports = router;

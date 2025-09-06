@@ -3,6 +3,7 @@ const AttendeeCheckin = require("../models/AttendeeCheckin");
 const Event = require("../models/Event");
 const UserAuth = require("../models/AuthUsers");
 const { format } = require("date-fns");
+const EventApplication = require("../models/EventApplication");
 
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
@@ -285,10 +286,55 @@ const updateAttendanceStatus = async (req, res) => {
   }
 };
 
+const getAcceptedEventList = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res
+        .status(401)
+        .json({ success: false, message: "No token provided" });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded._id;
+
+    // Find accepted applications
+    const applications = await EventApplication.find({
+      seeker_id: userId,
+      applicationStatus: "accepted",
+    }).populate("event_id", "eventName location");
+
+    if (!applications || applications.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No accepted events found",
+      });
+    }
+
+    console.log("applications", applications);
+
+    res.status(200).json({
+      success: true,
+      events: applications.map((app) => ({
+        event_id: app.event_id?._id,
+        seeker_id: app.seeker_id,
+        eventName: app.event_id?.eventName,
+        location: app.event_id?.location,
+        applicationStatus: app.applicationStatus,
+        appliedAt: formatDateTime(app.appliedAt),
+      })),
+    });
+  } catch (err) {
+    console.error("Get Accepted Event List Error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 module.exports = {
   submitCheckin,
   submitCheckout,
   getMyAttendanceStatus,
   getPendingAttendance,
   updateAttendanceStatus,
+  getAcceptedEventList,
 };
