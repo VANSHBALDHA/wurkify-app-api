@@ -292,6 +292,8 @@ const userLogin = async (req, res) => {
       );
     }
 
+    const userProfile = await UserProfile.findOne({ userId: user._id });
+
     const token = jwt.sign(
       {
         _id: user._id.toString(),
@@ -317,6 +319,7 @@ const userLogin = async (req, res) => {
         birthdate: user.birthdate,
         gender: user.gender,
         fcm_token: fcm_token || null,
+        profile_img: userProfile?.profile_img || null,
       },
     });
   } catch (err) {
