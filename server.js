@@ -28,12 +28,20 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"],
   },
+  pingTimeout: 6000000, // 60 seconds (default: 20000)
+  pingInterval: 250000000, // 25 seconds (default: 25000)
 });
 
 let onlineUsers = new Map();
 
 io.on("connection", (socket) => {
   console.log("⚡ User connected:", socket.id);
+
+  // ✅ Handle ping to keep connection alive
+  socket.on("ping", () => {
+    socket.emit("pong");
+    console.log(`Ping received from ${socket.id}`);
+  });
 
   // ✅ User joins
   socket.on("join", (userId) => {

@@ -375,6 +375,8 @@ const getMyTimesheet = async (req, res) => {
       clock_out: s.checkoutTime || null,
       checkin_status: s.checkinStatus,
       checkout_status: s.checkoutStatus,
+      checkin_selfie: s.checkinSelfie || null,
+      checkout_selfie: s.checkoutSelfie || null,
       total_hours:
         s.checkinTime && s.checkoutTime
           ? (
