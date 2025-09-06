@@ -79,7 +79,10 @@ const getProfileDetails = async (req, res) => {
         state: profile?.state || null,
         height: profile?.height || null,
         weight: profile?.weight || null,
-        skills: profile?.skills || [],
+        skills: (profile?.skills || []).map((s) => ({
+          skillName: s.name,
+          proficiency: s.proficiency,
+        })),
         education: profile?.education || {},
         socialLinks: profile?.socialLinks || {
           instagram: "",
@@ -140,7 +143,11 @@ const upsertProfile = async (req, res) => {
     let parsedEducation = {};
 
     if (typeof skills === "string") {
-      parsedSkills = JSON.parse(skills);
+      const rawSkills = JSON.parse(skills);
+      parsedSkills = rawSkills.map((s) => ({
+        name: s.skillName || s.name,
+        proficiency: s.proficiency || "",
+      }));
     }
 
     if (typeof education === "string") {
