@@ -42,6 +42,13 @@ const sendMessage = async (req, res) => {
       group_id: groupId,
       sender_id: userId,
       text,
+      status: "sent",
+    });
+
+    await Message.findByIdAndUpdate(newMessage._id, { status: "delivered" });
+    io.to(groupId).emit("message-status", {
+      messageId: newMessage._id,
+      status: "delivered",
     });
 
     for (let memberId of group.members) {
