@@ -11,6 +11,7 @@ const {
   verifyForgotOtp,
   resetPassword,
   deleteAccount,
+  resetOtp,
   changePin,
 } = require("../controllers/AuthController");
 
@@ -22,5 +23,6 @@ router.post("/verify-forgot-otp", upload.none(), verifyForgotOtp);
 router.post("/reset-password", upload.none(), resetPassword);
 router.delete("/delete-account", upload.none(), deleteAccount);
 router.post("/change-password", upload.none(), changePin);
+router.post("/reset-otp", upload.none(), resetOtp);
 
 module.exports = router;

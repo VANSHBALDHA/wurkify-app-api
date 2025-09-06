@@ -493,11 +493,64 @@ const changePin = async (req, res) => {
   }
 };
 
+const resetOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const user = await UserAuth.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: "User already verified. Please login.",
+      });
+    }
+
+    // Generate new OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Save/Update OTP record
+    await UserVerification.findOneAndUpdate(
+      { userId: user._id },
+      { otp, createdAt: new Date() },
+      { upsert: true, new: true }
+    );
+
+    // Send email
+    await sendOtpEmail(email, otp);
+
+    return res.status(200).json({
+      success: true,
+      message: "A new OTP has been sent to your email",
+    });
+  } catch (err) {
+    console.error("Reset OTP Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   verifyOtp,
   userLogin,
   forgotPassword,
+  resetOtp,
   verifyForgotOtp,
   resetPassword,
   deleteAccount,
