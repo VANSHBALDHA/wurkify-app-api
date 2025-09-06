@@ -302,7 +302,7 @@ const getAcceptedEventList = async (req, res) => {
     const applications = await EventApplication.find({
       seeker_id: userId,
       applicationStatus: "accepted",
-    }).populate("event_id", "eventName location");
+    }).populate("event_id", "eventName location eventStatus");
 
     if (!applications || applications.length === 0) {
       return res.status(404).json({
@@ -322,6 +322,7 @@ const getAcceptedEventList = async (req, res) => {
         location: app.event_id?.location,
         applicationStatus: app.applicationStatus,
         appliedAt: formatDateTime(app.appliedAt),
+        eventStatus: app.event_id?.eventStatus,
       })),
     });
   } catch (err) {
