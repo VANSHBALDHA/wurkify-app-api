@@ -139,24 +139,13 @@ const upsertProfile = async (req, res) => {
     let parsedEducation = {};
 
     if (typeof skills === "string") {
-      try {
-        parsedSkills = JSON.parse(skills);
-      } catch (e) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid skills JSON" });
-      }
+      parsedSkills = JSON.parse(skills);
     }
 
     if (typeof education === "string") {
-      try {
-        parsedEducation = JSON.parse(education);
-      } catch (e) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid education JSON" });
-      }
+      parsedEducation = JSON.parse(education);
     }
+
     let parsedBirthdate = null;
     if (birthdate) {
       const m = moment(birthdate, "DD-MM-YYYY", true);
@@ -169,11 +158,12 @@ const upsertProfile = async (req, res) => {
       parsedBirthdate = m.toDate();
     }
 
-    const base64Image = req.file.buffer.toString("base64");
-    const mimeType = req.file.mimetype;
+    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${
+      req.file.filename
+    }`;
 
     const updateData = {
-      profile_img: `data:${mimeType};base64,${base64Image}`,
+      profile_img: imageUrl,
       name,
       email,
       phone,

@@ -14,10 +14,12 @@ const {
 const UserProfile = require("../models/UserProfile");
 const jwt = require("jsonwebtoken");
 
+const uploadImage = require("../middlewares/uploadMiddleware");
+
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
 router.post("/", upload.none(), getProfileDetails);
-router.post("/update-profile", upload.single("profile_img"), upsertProfile);
+router.post("/update-profile", uploadImage.single("profile_img"), upsertProfile);
 router.post("/social-links", upload.none(), updateSocialLinks);
 router.post("/documentation", upload.none(), upsertDocumentation);
 router.post("/bank-details", upload.none(), upsertBankDetails);
