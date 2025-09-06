@@ -493,9 +493,13 @@ const deleteEvent = async (req, res) => {
       });
     }
 
+    const deletedGroup = await Group.findOneAndDelete({ event_id: eventId });
+
     return res.status(200).json({
       success: true,
-      message: "Event deleted successfully",
+      message: `Event deleted successfully${
+        deletedGroup ? " and its group removed" : ""
+      }`,
     });
   } catch (err) {
     console.error("Delete Event Error:", err);
