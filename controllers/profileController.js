@@ -3,6 +3,7 @@ const UserProfile = require("../models/UserProfile");
 const jwt = require("jsonwebtoken");
 const moment = require("moment");
 const cloudinary = require("cloudinary").v2;
+const streamifier = require("streamifier");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -167,12 +168,24 @@ const upsertProfile = async (req, res) => {
 
     let imageUrl = null;
     if (req.file) {
-      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
-        folder: "profile_images",
-        resource_type: "image",
-      });
+      const streamUpload = () => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: "profile_images", resource_type: "image" },
+            (error, result) => {
+              if (result) {
+                resolve(result);
+              } else {
+                reject(error);
+              }
+            }
+          );
+          streamifier.createReadStream(req.file.buffer).pipe(stream);
+        });
+      };
 
-      imageUrl = uploadResult.secure_url;
+      const result = await streamUpload();
+      imageUrl = result.secure_url;
     }
 
     const updateData = {
