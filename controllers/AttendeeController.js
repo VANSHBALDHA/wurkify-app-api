@@ -331,8 +331,6 @@ const getAcceptedEventList = async (req, res) => {
       });
     }
 
-    console.log("applications", applications);
-
     res.status(200).json({
       success: true,
       events: applications.map((app) => ({
