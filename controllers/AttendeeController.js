@@ -4,6 +4,15 @@ const Event = require("../models/Event");
 const UserAuth = require("../models/AuthUsers");
 const { format } = require("date-fns");
 
+const cloudinary = require("cloudinary").v2;
+const streamifier = require("streamifier");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
 const calculateDuration = (checkinTime, checkoutTime) => {
@@ -40,13 +49,35 @@ const submitCheckin = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Event not found" });
 
-    const base64Image = req.file.buffer.toString("base64");
-    const mimeType = req.file.mimetype;
+    // const base64Image = req.file.buffer.toString("base64");
+    // const mimeType = req.file.mimetype;
+
+    let imageUrl = null;
+    if (req.file) {
+      const streamUpload = () => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: "profile_images", resource_type: "image" },
+            (error, result) => {
+              if (result) {
+                resolve(result);
+              } else {
+                reject(error);
+              }
+            }
+          );
+          streamifier.createReadStream(req.file.buffer).pipe(stream);
+        });
+      };
+
+      const result = await streamUpload();
+      imageUrl = result.secure_url;
+    }
 
     const checkin = await AttendeeCheckin.findOneAndUpdate(
       { eventId, userId },
       {
-        checkinSelfie: `data:${mimeType};base64,${base64Image}`,
+        checkinSelfie: imageUrl,
         checkinTime: new Date(),
         checkinStatus: "pending",
       },
@@ -78,13 +109,35 @@ const submitCheckout = async (req, res) => {
       });
     }
 
-    const base64Image = req.file.buffer.toString("base64");
-    const mimeType = req.file.mimetype;
+    // const base64Image = req.file.buffer.toString("base64");
+    // const mimeType = req.file.mimetype;
+
+    let imageUrl = null;
+    if (req.file) {
+      const streamUpload = () => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: "profile_images", resource_type: "image" },
+            (error, result) => {
+              if (result) {
+                resolve(result);
+              } else {
+                reject(error);
+              }
+            }
+          );
+          streamifier.createReadStream(req.file.buffer).pipe(stream);
+        });
+      };
+
+      const result = await streamUpload();
+      imageUrl = result.secure_url;
+    }
 
     const attendee = await AttendeeCheckin.findOneAndUpdate(
       { eventId, userId },
       {
-        checkoutSelfie: `data:${mimeType};base64,${base64Image}`,
+        checkoutSelfie: imageUrl,
         checkoutTime: new Date(),
         checkoutStatus: "pending",
       },
