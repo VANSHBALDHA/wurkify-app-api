@@ -136,13 +136,6 @@ const upsertProfile = async (req, res) => {
       education,
     } = req.body;
 
-    if (!req.file) {
-      return res.status(400).json({
-        message: "No image file uploaded",
-        success: false,
-      });
-    }
-
     let parsedSkills = [];
     let parsedEducation = {};
 
@@ -189,19 +182,21 @@ const upsertProfile = async (req, res) => {
     }
 
     const updateData = {
-      profile_img: imageUrl,
-      name,
-      email,
-      phone,
-      birthdate: parsedBirthdate,
-      age,
-      gender,
-      weight,
-      state,
-      city,
-      height,
-      skills: parsedSkills,
-      education: parsedEducation,
+      ...(imageUrl && { profile_img: imageUrl }),
+      ...(name && { name }),
+      ...(email && { email }),
+      ...(phone && { phone }),
+      ...(parsedBirthdate && { birthdate: parsedBirthdate }),
+      ...(age && { age }),
+      ...(gender && { gender }),
+      ...(weight && { weight }),
+      ...(state && { state }),
+      ...(city && { city }),
+      ...(height && { height }),
+      ...(parsedSkills.length && { skills: parsedSkills }),
+      ...(Object.keys(parsedEducation).length && {
+        education: parsedEducation,
+      }),
     };
 
     const profile = await UserProfile.findOneAndUpdate(
