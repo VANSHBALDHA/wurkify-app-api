@@ -158,7 +158,7 @@ const registerUser = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      phone: phone || null,
+      phone,
       birthdate: parsedBirthdate,
       gender: gender || null,
       role: role || "seeker",
