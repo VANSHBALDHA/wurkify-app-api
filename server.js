@@ -158,7 +158,6 @@ const handler = serverless(app);
 
 module.exports = app;
 module.exports.handler = handler;
-module.exports = { io, onlineUsers };
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
