@@ -1,0 +1,11 @@
+const admin = require("firebase-admin");
+
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId: "wurkify-80a12",
+    clientEmail: "firebase-adminsdk-fbsvc@wurkify-80a12.iam.gserviceaccount.com",
+    privateKey:"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCax+DoeFuabwtt\n1r0lw9dVR4+BZZdnHM39/fLdA+aKO1Nr5/V52KX8K/q+jMYc8q4zAfuITrnMWY3Q\nedpKOT5Sfqn7BTPLxwD5zWx8CQpEHkr88BVYnVJHqY77/ZYIS1AMh87xjpU6oW6a\nbcG+TnacW+YaRiY3bp+fkTFJCCE2jEUbSqE3e8E37vW1O/ud8+4h7G8t953zZd9S\nVr6bZA0jrSHw9iOUPjsZ5mc/2ZYoI6p9+8Hho39zukt5B4HilIWjUcafb+hz0n/Q\n4c2X0EeRzDAlpVBiB9A6yfW6a8QM2onKiyOuNTMVUVQDIssdKOtsKXnX5odgiuSy\nHqRaNbmDAgMBAAECggEAKLl5lEECvSYFiE9tcg/OyvnqqL2tsewyyOb17TAXCvzk\nDKq5/GbD+Y8qyNMqVziFHBej8m/gVAOmHBnLlSbtnnAEUm9CexXvzEpABnysblLY\nISgcPbYbDY7v9553yNPkCn/7M7Rz0Drkao6BYQytCaPmbbhSWtho+GeP46rXbk3e\nKNfpMTBi5nQ0wpGkh+Mn/cv+QLCYbm9p/Gos3xr4e6a/Tu3QcJLjSiRDHfDITkrV\nr15+0yDQJAechRQShzocSvvpcCdkKKhqJ5hg1LD1mnuIo0BlOXM1zd5i/iO4lnmQ\nVIJuNI7zihjGOfeLMsUCHLbNH07k1TUQcEDQmHdC5QKBgQDJldG+CfPN8NqhyH4N\neiHdniMpiTiApPfjs7iDff+1IAUNgtQYmnowvBAC1bKQdjAcoveZo7Zi4YVEZ/i7\nCcnY9094pS3GJo7UAKexvhLRrbMTW1h5bB8jqCLZlUXCxyhGNz8Goy26OT9J/3i9\n695FttiR6MSDlgTsbE8la/N2VwKBgQDEj7jyuGaoDArBnJTZcaQ02+I2f2sICAYg\nrZ4lH5s8eQq2AYQ8x199SG2zWy56kg1jBXOLj5uaJHP7aNllT3o1O6hUnOLHoMmu\n07chKDKjEZtkrbiE895WX/ND9Gmn1gOFHNusOifyWF2Kve2ClYHzeB8TxfMIMQXY\nXRIa/VCitQKBgQDDMx0v3WlFYVYEVSWinUJP3IKGBQc+owAbcPtZ8Nd8p23dIHOL\nA4MQz/rdE9teQePixvflwX6qD2FB1UAotZjMTOaal7BUcR/bMGsyFTEZ8w41zz1E\nDqu0lmpwsTglHT7lhzezkK2F50tet1BO8CiC70SVPYWVOd64pUSaowbU7wKBgBiw\nlOKoFvz0xkUbjfbiN2YMWJXP23neyCZCqKKxHaay7Y1/E0UvJeduuZjV0zjCL7xI\nawMUvs7V1Vu3B9eZ7BfTrokyS6oXoD29ijs3+WRSSdqTl6HboAnpc30NrlfOohKO\nVWmExI/EWbubr8G/VdtnM0AglS5qOfm7dxK8zuwhAoGAK2D8g8cIWw1Mezd2XDyD\nMaNDV4nS+gwN0u+bmZRvl+bnm1izPTdTW9ddTBL6WeHmZE+78kjE844VijoCr4hS\no1nhDiuFd9532wn9ax/AdFpN3hiMVgZNAurVhc31ihWMQZsgpC0VC+e06E6Ih1aZ\nkrtPsjoJ3XSV/fAyweAiiFM=\n-----END PRIVATE KEY-----\n",
+  }),
+});
+
+module.exports = admin;
