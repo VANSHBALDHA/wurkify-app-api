@@ -858,18 +858,31 @@ const getSeekerRecentActivity = async (req, res) => {
       .limit(5)
       .populate("event_id");
 
-    const recentActivity = applications
-      .filter((app) => app.event_id !== null)
-      .map((app) => ({
-        event_id: app.event_id._id,
-        eventName: app.event_id.eventName,
-        shiftTime: app.event_id.shiftTime,
-        location: app.event_id.location,
-        eventStatus: app.event_id.eventStatus,
-        organizer_name: app.event_id.organizer_name,
-        appliedAt: app.createdAt,
-        applicantStatus: app.applicationStatus,
-      }));
+    const recentActivity = await Promise.all(
+      applications
+        .filter((app) => app.event_id !== null)
+        .map(async (app) => {
+          // 🔍 Organizer profile
+          const organizerProfile = await UserProfile.findOne(
+            { userId: app.event_id.organizer_id },
+            "profile_img"
+          );
+
+          return {
+            event_id: app.event_id._id,
+            eventName: app.event_id.eventName,
+            shiftTime: app.event_id.shiftTime,
+            location: app.event_id.location,
+            eventStatus: app.event_id.eventStatus,
+            organizer_name: app.event_id.organizer_name,
+            organizer_img: organizerProfile
+              ? organizerProfile.profile_img
+              : null, // ✅ added
+            appliedAt: app.createdAt,
+            applicantStatus: app.applicationStatus,
+          };
+        })
+    );
 
     const totalApplied = await EventApplication.countDocuments({
       seeker_id: seekerId,
@@ -1216,6 +1229,11 @@ const getOrganizerDashboard = async (req, res) => {
       moneySpend: item.moneySpend,
     }));
 
+    const organizerProfile = await UserProfile.findOne(
+      { userId: organizerId },
+      "profile_img"
+    );
+
     const recentEvents = await Event.find({ organizer_id: user._id })
       .sort({ createdAt: -1 })
       .limit(5);
@@ -1234,6 +1252,7 @@ const getOrganizerDashboard = async (req, res) => {
       additionalNotes: event.additionalNotes,
       eventStatus: event.eventStatus,
       organizer_name: event.organizer_name,
+      organizer_img: organizerProfile ? organizerProfile.profile_img : null, 
       createdAt: event.createdAt,
     }));
 
