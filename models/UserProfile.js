@@ -39,10 +39,6 @@ const UserProfileSchema = new mongoose.Schema({
   documentation: {
     aadharNumber: String,
     panNumber: String,
-    streetAddress: String,
-    city: String,
-    state: String,
-    pincode: String,
   },
   bankDetails: {
     accountNumber: { type: String },

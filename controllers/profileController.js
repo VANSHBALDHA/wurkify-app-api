@@ -303,17 +303,9 @@ const upsertDocumentation = async (req, res) => {
     }
 
     const userId = decoded._id;
-    const { aadharNumber, panNumber, streetAddress, city, state, pincode } =
-      req.body;
+    const { aadharNumber, panNumber } = req.body;
 
-    if (
-      !aadharNumber ||
-      !panNumber ||
-      !streetAddress ||
-      !city ||
-      !state ||
-      !pincode
-    ) {
+    if (!aadharNumber || !panNumber) {
       return res.status(400).json({
         success: false,
         message: "All documentation fields are required",
@@ -336,22 +328,10 @@ const upsertDocumentation = async (req, res) => {
       });
     }
 
-    const pincodeRegex = /^\d{6}$/;
-    if (!pincodeRegex.test(pincode)) {
-      return res.status(400).json({
-        success: false,
-        message: "Pincode must be a 6-digit number",
-      });
-    }
-
     const updateData = {
       documentation: {
         aadharNumber,
         panNumber,
-        streetAddress: streetAddress.trim(),
-        city: city.trim(),
-        state: state.trim(),
-        pincode,
       },
     };
 
