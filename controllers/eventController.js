@@ -774,10 +774,16 @@ const applyToEvent = async (req, res) => {
     }
 
     const seekerProfile = await UserProfile.findOne({ userId: seekerId });
-    if (!isProfileComplete(seekerProfile)) {
+    const { isComplete, missingFields } = checkProfileCompletion(
+      seeker,
+      seekerProfile
+    );
+
+    if (!isComplete) {
       return res.status(400).json({
         success: false,
         message: "Please complete your profile before applying to events",
+        missingFields,
       });
     }
 
@@ -1252,7 +1258,7 @@ const getOrganizerDashboard = async (req, res) => {
       additionalNotes: event.additionalNotes,
       eventStatus: event.eventStatus,
       organizer_name: event.organizer_name,
-      organizer_img: organizerProfile ? organizerProfile.profile_img : null, 
+      organizer_img: organizerProfile ? organizerProfile.profile_img : null,
       createdAt: event.createdAt,
     }));
 
