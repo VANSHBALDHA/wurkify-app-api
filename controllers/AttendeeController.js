@@ -269,31 +269,41 @@ const getPendingAttendance = async (req, res) => {
 
     const { eventId } = req.body;
 
+    // Get all attendance records and populate user basic details
     const records = await AttendeeCheckin.find({ eventId }).populate(
       "userId",
       "name email"
     );
 
-    // Extract pending sessions
     const pending = [];
-    records.forEach((r) => {
+    for (const r of records) {
+      // Fetch user profile to get profile_img
+      const profile = await UserProfile.findOne({
+        userId: r.userId._id,
+      }).select("profile_img");
+
       r.sessions.forEach((s) => {
         if (s.checkinStatus === "pending" || s.checkoutStatus === "pending") {
           pending.push({
             recordId: r._id,
-            user: r.userId,
+            user: {
+              _id: r.userId._id,
+              name: r.userId.name,
+              email: r.userId.email,
+              profile_img: profile?.profile_img || null, // ✅ added here
+            },
             sessionId: s._id,
             checkinTime: formatDateTime(s.checkinTime),
             checkoutTime: formatDateTime(s.checkoutTime),
             checkinStatus: s.checkinStatus,
             checkoutStatus: s.checkoutStatus,
-            checkinSelfie: s.checkinSelfie || null, // ✅ add this
+            checkinSelfie: s.checkinSelfie || null,
             checkoutSelfie: s.checkoutSelfie || null,
             duration: calculateDuration(s.checkinTime, s.checkoutTime),
           });
         }
       });
-    });
+    }
 
     res.status(200).json({
       success: true,
