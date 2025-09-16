@@ -5,6 +5,7 @@ const UserAuth = require("../models/AuthUsers");
 const { format } = require("date-fns");
 const EventApplication = require("../models/EventApplication");
 const { sendNotification } = require("../middlewares/notificationService");
+const UserProfile = require("../models/UserProfile");
 
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
