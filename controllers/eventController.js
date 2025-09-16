@@ -8,7 +8,7 @@ const Group = require("../models/Group");
 const { io, onlineUsers } = require("../server");
 const moment = require("moment");
 const { sendNotification } = require("../middlewares/notificationService");
-const { isProfileComplete } = require("../utils/profileValidator");
+const { checkProfileCompletion } = require("../utils/profileValidator");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 

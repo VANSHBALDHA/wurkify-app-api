@@ -1,4 +1,4 @@
-function checkProfileCompletion(user, profile) {
+const checkProfileCompletion = (user, profile) => {
   if (!user || !profile) {
     return { isComplete: false, missingFields: ["profile"] };
   }
@@ -19,10 +19,6 @@ function checkProfileCompletion(user, profile) {
     // Documentation
     aadharNumber: profile.documentation?.aadharNumber,
     panNumber: profile.documentation?.panNumber,
-    streetAddress: profile.documentation?.streetAddress,
-    docCity: profile.documentation?.city,
-    docState: profile.documentation?.state,
-    pincode: profile.documentation?.pincode,
 
     // Bank Details
     accountNumber: profile.bankDetails?.accountNumber,
@@ -42,4 +38,6 @@ function checkProfileCompletion(user, profile) {
     isComplete: missingFields.length === 0,
     missingFields,
   };
-}
+};
+
+module.exports = { checkProfileCompletion };
