@@ -79,6 +79,7 @@ const getProfileDetails = async (req, res) => {
         state: profile?.state || null,
         height: profile?.height || null,
         weight: profile?.weight || null,
+        address: profile?.address || null,
         skills: (profile?.skills || []).map((s) => ({
           skillName: s.name,
           proficiency: s.proficiency,
@@ -137,6 +138,7 @@ const upsertProfile = async (req, res) => {
       height,
       skills,
       education,
+      address,
     } = req.body;
 
     let parsedSkills = [];
@@ -204,6 +206,7 @@ const upsertProfile = async (req, res) => {
       ...(Object.keys(parsedEducation).length && {
         education: parsedEducation,
       }),
+      ...(address && { address }),
     };
 
     const profile = await UserProfile.findOneAndUpdate(

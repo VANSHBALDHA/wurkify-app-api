@@ -23,6 +23,7 @@ const UserProfileSchema = new mongoose.Schema({
   state: String,
   city: String,
   height: String,
+  address: { type: String, default: "" },
   fcm_token: { type: String, default: "" },
   skills: [{ name: String, proficiency: String }],
   education: {

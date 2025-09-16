@@ -15,6 +15,7 @@ const checkProfileCompletion = (user, profile) => {
     height: profile.height,
     state: profile.state,
     city: profile.city,
+    address: profile.address,
 
     // Documentation
     aadharNumber: profile.documentation?.aadharNumber,
