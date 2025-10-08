@@ -399,6 +399,7 @@ const createEvent = async (req, res) => {
     }
 
     let computedPaymentClearanceDays = 0;
+    let isOtherSelected = false;
 
     if (typeof paymentClearanceDays === "string") {
       const value = paymentClearanceDays.toLowerCase().trim();
@@ -406,10 +407,11 @@ const createEvent = async (req, res) => {
       if (value === "spot pay") {
         computedPaymentClearanceDays = 1;
       } else if (value === "within 1 week") {
-        computedPaymentClearanceDays = 7; // Changed to number
+        computedPaymentClearanceDays = 7;
       } else if (value === "within 2 weeks") {
-        computedPaymentClearanceDays = 14; // Changed to number
+        computedPaymentClearanceDays = 14;
       } else if (value.startsWith("other")) {
+        isOtherSelected = true;
         const match = value.match(/(\d+)/);
         computedPaymentClearanceDays = match ? parseInt(match[1], 10) : 0;
       } else {
@@ -562,6 +564,7 @@ const editEvent = async (req, res) => {
     );
 
     let computedPaymentClearanceDays = 0;
+    let isOtherSelected = false;
 
     if (typeof paymentClearanceDays === "string") {
       const value = paymentClearanceDays.toLowerCase().trim();
@@ -569,10 +572,11 @@ const editEvent = async (req, res) => {
       if (value === "spot pay") {
         computedPaymentClearanceDays = 1;
       } else if (value === "within 1 week") {
-        computedPaymentClearanceDays = 7; // Changed to number
+        computedPaymentClearanceDays = 7;
       } else if (value === "within 2 weeks") {
-        computedPaymentClearanceDays = 14; // Changed to number
+        computedPaymentClearanceDays = 14;
       } else if (value.startsWith("other")) {
+        isOtherSelected = true;
         const match = value.match(/(\d+)/);
         computedPaymentClearanceDays = match ? parseInt(match[1], 10) : 0;
       } else {
