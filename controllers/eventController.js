@@ -153,9 +153,9 @@ const getEventList = async (req, res) => {
         applicationMap.set(app.event_id.toString(), app.applicationStatus);
       });
 
-      const query = {};
-      if (eventStatus) {
-        query.eventStatus = eventStatus;
+      const query = { eventStatus: { $ne: "completed" } };
+      if (eventStatus && eventStatus !== "all") {
+        query.eventStatus = eventStatus.toLowerCase();
       }
 
       console.log("Seeker Event Query:", query);
@@ -740,6 +740,29 @@ const updateEventStatus = async (req, res) => {
       });
     }
 
+    if (status === "completed") {
+      const deletedGroup = await Group.findOneAndDelete({ event_id: eventId });
+      if (deletedGroup) {
+        console.log(`🗑️ Group deleted for completed event: ${event.eventName}`);
+      }
+
+      // Optional: Notify group members
+      const applications = await EventApplication.find({
+        event_id: eventId,
+        applicationStatus: "accepted",
+      });
+      for (const app of applications) {
+        await sendNotification({
+          sender_id: organizerId,
+          receiver_id: app.seeker_id,
+          event_id: eventId,
+          type: "group-delete",
+          title: "Event Completed",
+          message: `The event "${event.eventName}" has been completed. The event group has now been closed.`,
+        });
+      }
+    }
+
     // for (const app of applicants) {
     //   await sendNotification({
     //     sender_id: organizerId,
@@ -753,7 +776,9 @@ const updateEventStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Event status updated to '${status}'`,
+      message: `Event status updated to '${status}'${
+        status === "completed" ? " and group deleted" : ""
+      }`,
     });
   } catch (err) {
     console.error("Update Event Status Error:", err);
