@@ -398,6 +398,27 @@ const createEvent = async (req, res) => {
       parsedEndDate = m.toDate();
     }
 
+    let computedPaymentClearanceDays = 0;
+
+    if (typeof paymentClearanceDays === "string") {
+      const value = paymentClearanceDays.toLowerCase().trim();
+
+      if (value === "spot pay") {
+        computedPaymentClearanceDays = 0;
+      } else if (value === "within 1 week") {
+        computedPaymentClearanceDays = 7;
+      } else if (value === "within 2 weeks") {
+        computedPaymentClearanceDays = 14;
+      } else if (value.startsWith("other")) {
+        const match = value.match(/(\d+)/);
+        computedPaymentClearanceDays = match ? parseInt(match[1], 10) : 0;
+      } else {
+        computedPaymentClearanceDays = Number(value) || 0;
+      }
+    } else if (typeof paymentClearanceDays === "number") {
+      computedPaymentClearanceDays = paymentClearanceDays;
+    }
+
     const eventData = {
       organizer_id: userId,
       organizer_name: username,
@@ -414,7 +435,7 @@ const createEvent = async (req, res) => {
           ? dressCode.toLowerCase() === "yes"
           : !!dressCode,
       paymentAmount,
-      paymentClearanceDays,
+      paymentClearanceDays: computedPaymentClearanceDays,
       workDescription,
       location,
       requiredMemberCount,
