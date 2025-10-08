@@ -557,10 +557,31 @@ const editEvent = async (req, res) => {
       });
     }
 
-    // ✅ Number of days
     const numberOfDays = Math.floor(
       (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24)
     );
+
+    // ✅ Compute paymentClearanceDays (same logic as createEvent)
+    let computedPaymentClearanceDays = 0;
+
+    if (typeof paymentClearanceDays === "string") {
+      const value = paymentClearanceDays.toLowerCase().trim();
+
+      if (value === "spot pay") {
+        computedPaymentClearanceDays = 1;
+      } else if (value === "within 1 week") {
+        computedPaymentClearanceDays = "within 7 days";
+      } else if (value === "within 2 weeks") {
+        computedPaymentClearanceDays = "within 14 days";
+      } else if (value.startsWith("other")) {
+        const match = value.match(/(\d+)/);
+        computedPaymentClearanceDays = match ? parseInt(match[1], 10) : 0;
+      } else {
+        computedPaymentClearanceDays = Number(value) || 0;
+      }
+    } else if (typeof paymentClearanceDays === "number") {
+      computedPaymentClearanceDays = paymentClearanceDays;
+    }
 
     // ✅ Build update object
     const updateData = {
@@ -578,7 +599,7 @@ const editEvent = async (req, res) => {
           ? dressCode.toLowerCase() === "yes"
           : !!dressCode,
       paymentAmount,
-      paymentClearanceDays,
+      paymentClearanceDays: computedPaymentClearanceDays,
       workDescription,
       location,
       requiredMemberCount,
