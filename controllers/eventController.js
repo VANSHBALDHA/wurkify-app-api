@@ -60,17 +60,37 @@ const getEventList = async (req, res) => {
         .json({ success: false, message: "User not found" });
     }
 
-    const { eventStatus, applicationStatus } = req.query;
+    // ✅ Normalize query params
+    const eventStatus =
+      req.query.eventStatus && req.query.eventStatus !== "all"
+        ? req.query.eventStatus.toLowerCase()
+        : null;
+
+    const applicationStatus = req.query.applicationStatus || null;
 
     let events;
 
     if (user.role === "organizer") {
+      // ✅ Build query safely
       const query = { organizer_id: userId };
-      if (eventStatus && eventStatus !== "all") {
+      if (eventStatus) {
         query.eventStatus = eventStatus;
       }
 
+      console.log("Organizer Event Query:", query);
+
       events = await Event.find(query).sort({ createdAt: -1 });
+
+      // ✅ Fix for missing eventStatus (older events)
+      const missingStatus = events.filter((e) => !e.eventStatus);
+      if (missingStatus.length > 0) {
+        await Promise.all(
+          missingStatus.map((e) => {
+            e.eventStatus = "pending";
+            return e.save();
+          })
+        );
+      }
 
       const eventIds = events.map((e) => e._id);
 
@@ -85,7 +105,6 @@ const getEventList = async (req, res) => {
 
       const formattedEvents = await Promise.all(
         events.map(async (event) => {
-          // 🔍 Get organizer profile
           const organizerProfile = await UserProfile.findOne(
             { userId: event.organizer_id },
             "profile_img"
@@ -108,34 +127,38 @@ const getEventList = async (req, res) => {
             location: event.location,
             requiredMemberCount: event.requiredMemberCount,
             additionalNotes: event.additionalNotes,
-            eventStatus: event.eventStatus,
+            eventStatus: event.eventStatus || "pending",
             organizer_name: event.organizer_name,
             organizer_img: organizerProfile
               ? organizerProfile.profile_img
-              : null, // ✅ added
+              : null,
             createdAt: event.createdAt,
             appliedCount: appCountMap.get(event._id.toString()) || 0,
           };
         })
       );
+
       return res.status(200).json({
         success: true,
         message: "Organizer events fetched successfully",
         total: formattedEvents.length,
         events: formattedEvents,
       });
-    } else if (user.role === "seeker") {
+    }
+    // ✅ SEEKER LOGIC
+    else if (user.role === "seeker") {
       const applications = await EventApplication.find({ seeker_id: userId });
-
       const applicationMap = new Map();
       applications.forEach((app) => {
         applicationMap.set(app.event_id.toString(), app.applicationStatus);
       });
 
       const query = {};
-      if (eventStatus && eventStatus !== "all") {
+      if (eventStatus) {
         query.eventStatus = eventStatus;
       }
+
+      console.log("Seeker Event Query:", query);
 
       const events = await Event.find(query).sort({ createdAt: -1 });
 
@@ -148,9 +171,19 @@ const getEventList = async (req, res) => {
         });
       }
 
+      // ✅ Fix for missing eventStatus (older events)
+      const missingStatus = events.filter((e) => !e.eventStatus);
+      if (missingStatus.length > 0) {
+        await Promise.all(
+          missingStatus.map((e) => {
+            e.eventStatus = "pending";
+            return e.save();
+          })
+        );
+      }
+
       const eventIds = events.map((e) => e._id);
 
-      // ✅ Count applications for each event
       const appCounts = await EventApplication.aggregate([
         { $match: { event_id: { $in: eventIds } } },
         { $group: { _id: "$event_id", count: { $sum: 1 } } },
@@ -164,8 +197,6 @@ const getEventList = async (req, res) => {
         events.map(async (event) => {
           const eventId = event._id.toString();
           const appliedStatus = applicationMap.get(eventId);
-
-          // 🔍 Organizer profile image
           const organizerProfile = await UserProfile.findOne(
             { userId: event.organizer_id },
             "profile_img"
@@ -188,11 +219,11 @@ const getEventList = async (req, res) => {
             location: event.location,
             requiredMemberCount: event.requiredMemberCount,
             additionalNotes: event.additionalNotes,
-            eventStatus: event.eventStatus,
+            eventStatus: event.eventStatus || "pending",
             organizer_name: event.organizer_name,
             organizer_img: organizerProfile
               ? organizerProfile.profile_img
-              : null, // ✅ added
+              : null,
             createdAt: event.createdAt,
             alreadyApplied: applicationMap.has(eventId),
             applicationStatus: appliedStatus || null,
