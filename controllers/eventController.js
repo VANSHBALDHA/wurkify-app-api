@@ -404,11 +404,11 @@ const createEvent = async (req, res) => {
       const value = paymentClearanceDays.toLowerCase().trim();
 
       if (value === "spot pay") {
-        computedPaymentClearanceDays = 0;
+        computedPaymentClearanceDays = 1;
       } else if (value === "within 1 week") {
-        computedPaymentClearanceDays = 7;
+        computedPaymentClearanceDays = "within 1 week";
       } else if (value === "within 2 weeks") {
-        computedPaymentClearanceDays = 14;
+        computedPaymentClearanceDays = "within 2 weeks";
       } else if (value.startsWith("other")) {
         const match = value.match(/(\d+)/);
         computedPaymentClearanceDays = match ? parseInt(match[1], 10) : 0;
