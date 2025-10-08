@@ -61,9 +61,8 @@ const eventSchema = new mongoose.Schema({
     min: 0,
   },
   paymentClearanceDays: {
-    type: Number,
+    type: String,
     required: true,
-    min: 0,
   },
   workDescription: {
     type: String,
@@ -98,7 +97,5 @@ const eventSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
-
-
 
 module.exports = mongoose.model("Event", eventSchema);
