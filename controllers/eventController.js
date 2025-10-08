@@ -369,33 +369,48 @@ const createEvent = async (req, res) => {
 
     const username = user.name;
 
-    if (!startDate || !endDate) {
+    // ✅ Properly declare variables
+    let parsedStartDate = null;
+    let parsedEndDate = null;
+
+    // Validate and parse startDate
+    if (!startDate) {
       return res.status(400).json({
         success: false,
-        message: "startDate and endDate are required",
+        message: "startDate is required",
       });
     }
-
-    if (startDate) {
-      const m = moment(startDate, "DD-MM-YYYY", true);
-      if (!m.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid startDate format. Use DD-MM-YYYY",
-        });
-      }
-      parsedStartDate = m.toDate();
+    const start = moment(startDate, ["DD-MM-YYYY", "YYYY-MM-DD"], true);
+    if (!start.isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid startDate format. Use DD-MM-YYYY or YYYY-MM-DD",
+      });
     }
+    parsedStartDate = start.toDate();
 
-    if (endDate) {
-      const m = moment(endDate, "DD-MM-YYYY", true);
-      if (!m.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid endDate format. Use DD-MM-YYYY",
-        });
-      }
-      parsedEndDate = m.toDate();
+    // Validate and parse endDate
+    if (!endDate) {
+      return res.status(400).json({
+        success: false,
+        message: "endDate is required",
+      });
+    }
+    const end = moment(endDate, ["DD-MM-YYYY", "YYYY-MM-DD"], true);
+    if (!end.isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid endDate format. Use DD-MM-YYYY or YYYY-MM-DD",
+      });
+    }
+    parsedEndDate = end.toDate();
+
+    // ✅ Sanity check: endDate cannot be before startDate
+    if (parsedEndDate < parsedStartDate) {
+      return res.status(400).json({
+        success: false,
+        message: "endDate cannot be before startDate",
+      });
     }
 
     let computedPaymentClearanceDays = 0;
@@ -529,33 +544,26 @@ const editEvent = async (req, res) => {
       });
     }
 
-    let parsedStartDate, parsedEndDate;
-    if (startDate) {
-      const m = moment(startDate, "DD-MM-YYYY", true);
-      if (!m.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid startDate format. Use DD-MM-YYYY",
-        });
-      }
-      parsedStartDate = m.toDate();
+    let parsedStartDate = null;
+    let parsedEndDate = null;
+
+    const startMoment = moment(startDate, ["DD-MM-YYYY", "YYYY-MM-DD"], true);
+    const endMoment = moment(endDate, ["DD-MM-YYYY", "YYYY-MM-DD"], true);
+
+    if (!startMoment.isValid() || !endMoment.isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date format. Please use DD-MM-YYYY or YYYY-MM-DD",
+      });
     }
 
-    if (endDate) {
-      const m = moment(endDate, "DD-MM-YYYY", true);
-      if (!m.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid endDate format. Use DD-MM-YYYY",
-        });
-      }
-      parsedEndDate = m.toDate();
-    }
+    parsedStartDate = startMoment.toDate();
+    parsedEndDate = endMoment.toDate();
 
     if (parsedEndDate < parsedStartDate) {
       return res.status(400).json({
         success: false,
-        message: "endDate must be after or equal to startDate",
+        message: "endDate cannot be before startDate",
       });
     }
 
