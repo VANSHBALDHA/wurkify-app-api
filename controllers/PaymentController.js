@@ -320,7 +320,7 @@ const getSeekerEarnings = async (req, res) => {
       .filter((t) => t.type === "credit")
       .sort((a, b) => b.date - a.date)
       .map((t) => ({
-        title: `Event Payment - ${t.event_id?.eventName || "Unknown Event"}`,
+        title: t.event_id?.eventName || "Event Payment",
         amount: t.amount,
         type: t.type,
         date: t.date,
