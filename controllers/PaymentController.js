@@ -2,15 +2,16 @@ const jwt = require("jsonwebtoken");
 const Event = require("../models/Event");
 const EventApplication = require("../models/EventApplication");
 const UserAuth = require("../models/AuthUsers");
-const razorpay = require("../utils/razorpay");
-const crypto = require("crypto");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
+/**
+ * Organizer: Fetch all events with payment summary
+ */
 const getPaymentEventList = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
@@ -63,10 +64,13 @@ const getPaymentEventList = async (req, res) => {
   }
 };
 
+/**
+ * Organizer: Fetch seeker payment details for a specific event
+ */
 const getEventUserPayments = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
@@ -124,71 +128,45 @@ const getEventUserPayments = async (req, res) => {
   }
 };
 
-const createPaymentOrder = async (req, res) => {
+/**
+ * ✅ Flutter-based payment success handler
+ * This API will be called after payment success in Flutter app.
+ */
+const updatePaymentStatus = async (req, res) => {
   try {
-    const { amount, eventId, seekerId } = req.body;
+    const { eventId, seekerId, paymentId, amount } = req.body;
 
-    if (!amount || !eventId || !seekerId) {
+    if (!eventId || !seekerId || !paymentId) {
       return res
         .status(400)
         .json({ success: false, message: "Missing fields" });
     }
-    const shortEventId = eventId.toString().slice(-6);
-    const options = {
-      amount: (amount * 100) / 100,
-      currency: "INR",
-      receipt: `EVT${shortEventId}_${Date.now()}`,
-      payment_capture: 1,
-    };
 
-    const order = await razorpay.orders.create(options);
-
-    return res.status(200).json({
-      success: true,
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      key: process.env.RAZORPAY_KEY_ID,
-      eventId,
-      seekerId,
-    });
-  } catch (err) {
-    console.error("Create Payment Order Error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-};
-
-const verifyPayment = async (req, res) => {
-  try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      eventId,
-      seekerId,
-    } = req.body;
-
-    const hmac = crypto.createHmac("sha256", process.env.RAZORPAY_SECRET);
-    hmac.update(razorpay_order_id + "|" + razorpay_payment_id);
-    const generatedSignature = hmac.digest("hex");
-
-    if (generatedSignature !== razorpay_signature) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Payment verification failed" });
-    }
-
-    await EventApplication.findOneAndUpdate(
+    // Update event application payment status
+    const updated = await EventApplication.findOneAndUpdate(
       { event_id: eventId, seeker_id: seekerId },
-      { paymentStatus: "completed", razorpay_payment_id },
+      {
+        paymentStatus: "completed",
+        razorpay_payment_id: paymentId,
+        paymentAmount: amount,
+        paymentReceivedAt: new Date(),
+      },
       { new: true }
     );
 
-    return res
-      .status(200)
-      .json({ success: true, message: "Payment verified & updated" });
+    if (!updated) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Event application not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment updated successfully",
+      data: updated,
+    });
   } catch (err) {
-    console.error("Verify Payment Error:", err);
+    console.error("Update Payment Status Error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -196,6 +174,5 @@ const verifyPayment = async (req, res) => {
 module.exports = {
   getPaymentEventList,
   getEventUserPayments,
-  createPaymentOrder,
-  verifyPayment,
+  updatePaymentStatus,
 };
