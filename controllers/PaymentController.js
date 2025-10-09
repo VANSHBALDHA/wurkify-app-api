@@ -4,6 +4,7 @@ const EventApplication = require("../models/EventApplication");
 const UserAuth = require("../models/AuthUsers");
 const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
+const axios = require("axios");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -95,6 +96,9 @@ const getWalletDetails = async (req, res) => {
 /**
  * Organizer: Fetch all events with payment summary
  */
+/**
+ * Organizer: Fetch all events with payment summary + total spent
+ */
 const getPaymentEventList = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -118,22 +122,35 @@ const getPaymentEventList = async (req, res) => {
       createdAt: -1,
     });
 
+    let totalSpendMoney = 0;
+
     const formattedEvents = await Promise.all(
       events.map(async (event) => {
         const totalApplicants = await EventApplication.countDocuments({
           event_id: event._id,
         });
-        const completedPayments = await EventApplication.countDocuments({
+
+        const completedPayments = await EventApplication.find({
           event_id: event._id,
-          paymentStatus: "completed",
+          paymentStatus: { $in: ["completed", "credited"] },
         });
+
+        // Calculate spend for this event
+        const totalEventSpend = completedPayments.reduce(
+          (sum, app) => sum + (app.paymentAmount || event.paymentAmount || 0),
+          0
+        );
+
+        // Add to overall total
+        totalSpendMoney += totalEventSpend;
 
         return {
           event_id: event._id,
           eventName: event.eventName,
           location: event.location,
           totalApplicants,
-          completedPayments,
+          completedPayments: completedPayments.length,
+          totalEventSpend,
           status: event.eventStatus,
         };
       })
@@ -142,7 +159,8 @@ const getPaymentEventList = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Payment event list fetched successfully",
-      total: formattedEvents.length,
+      totalEvents: formattedEvents.length,
+      totalSpendMoney, // ✅ added total spent money (across all events)
       events: formattedEvents,
     });
   } catch (err) {
@@ -341,6 +359,93 @@ const getSeekerEarnings = async (req, res) => {
   }
 };
 
+/**
+ * ✅ Seeker: Withdraw earnings from wallet
+ */
+const withdrawSeekerEarnings = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const seekerId = decoded._id;
+
+    const { amount, upiId } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid withdrawal amount" });
+    }
+
+    if (!upiId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "UPI ID is required" });
+    }
+
+    // Fetch wallet
+    const wallet = await Wallet.findOne({ seeker_id: seekerId });
+    if (!wallet || wallet.balance < amount) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient wallet balance",
+      });
+    }
+
+    // ✅ Call RazorpayX Payout API
+    const response = await axios.post(
+      "https://api.razorpay.com/v1/payouts",
+      {
+        account_number: process.env.RAZORPAYX_ACCOUNT_NO,
+        fund_account: {
+          account_type: "vpa",
+          vpa: { address: upiId },
+        },
+        amount: amount * 100,
+        currency: "INR",
+        mode: "UPI",
+        purpose: "payout",
+        narration: "Seeker Wallet Withdrawal",
+      },
+      {
+        auth: {
+          username: process.env.RAZORPAY_KEY_ID,
+          password: process.env.RAZORPAY_KEY_SECRET,
+        },
+      }
+    );
+
+    const payout = response.data;
+
+    // ✅ Deduct from wallet and save
+    wallet.balance -= amount;
+    wallet.transactions.push({
+      type: "debit",
+      amount,
+      description: `Withdrawal via Razorpay (Payout ID: ${payout.id})`,
+      date: new Date(),
+    });
+    await wallet.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Withdrawal successful via Razorpay",
+      payout,
+      walletBalance: wallet.balance,
+    });
+  } catch (err) {
+    console.error("Withdraw Error:", err.response?.data || err.message);
+    return res
+      .status(500)
+      .json({ success: false, message: "Withdrawal failed" });
+  }
+};
+
 module.exports = {
   getPaymentEventList,
   getEventUserPayments,
@@ -348,4 +453,5 @@ module.exports = {
   releasePaymentToSeeker,
   getWalletDetails,
   getSeekerEarnings,
+  withdrawSeekerEarnings,
 };

@@ -11,6 +11,7 @@ const {
   releasePaymentToSeeker,
   getWalletDetails,
   getSeekerEarnings,
+  withdrawSeekerEarnings,
 } = require("../controllers/PaymentController");
 
 // ✅ Organizer: Get all events with payment info
@@ -30,5 +31,8 @@ router.post("/wallet", upload.none(), getWalletDetails);
 
 // ✅ Seeker: Get all credited payments and total earnings
 router.post("/seeker-earnings", upload.none(), getSeekerEarnings);
+
+// ✅ Seeker: Withdraw earnings from wallet
+router.post("/withdraw-earnings", upload.none(), withdrawSeekerEarnings);
 
 module.exports = router;
