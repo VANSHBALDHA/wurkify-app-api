@@ -283,13 +283,23 @@ const updatePaymentStatus = async (req, res) => {
  */
 const getSeekerEarnings = async (req, res) => {
   try {
-    const { seekerId } = req.body;
+    // const { seekerId } = req.body;
 
-    if (!seekerId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Seeker ID is required" });
+    // if (!seekerId) {
+    //   return res
+    //     .status(400)
+    //     .json({ success: false, message: "Seeker ID is required" });
+    // }
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const seekerId = decoded._id;
 
     // Fetch wallet
     const wallet = await Wallet.findOne({ seeker_id: seekerId }).populate(
