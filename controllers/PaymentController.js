@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const Event = require("../models/Event");
 const EventApplication = require("../models/EventApplication");
 const UserAuth = require("../models/AuthUsers");
+const mongoose = require("mongoose");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -142,28 +143,49 @@ const updatePaymentStatus = async (req, res) => {
         .json({ success: false, message: "Missing fields" });
     }
 
-    // Update event application payment status
-    const updated = await EventApplication.findOneAndUpdate(
-      { event_id: eventId, seeker_id: seekerId },
+    // ✅ Convert to ObjectId to avoid type mismatch
+    const eventObjectId = new mongoose.Types.ObjectId(eventId);
+    const seekerObjectId = new mongoose.Types.ObjectId(seekerId);
+
+    // ✅ Ensure event exists
+    const event = await Event.findById(eventObjectId);
+    if (!event) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Event not found" });
+    }
+
+    // ✅ Try to update existing application
+    let application = await EventApplication.findOneAndUpdate(
+      { event_id: eventObjectId, seeker_id: seekerObjectId },
       {
-        paymentStatus: "completed",
-        razorpay_payment_id: paymentId,
-        paymentAmount: amount,
-        paymentReceivedAt: new Date(),
+        $set: {
+          paymentStatus: "completed",
+          razorpay_payment_id: paymentId,
+          paymentAmount: amount || event.paymentAmount,
+          paymentReceivedAt: new Date(),
+        },
       },
       { new: true }
     );
 
-    if (!updated) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Event application not found" });
+    // ✅ If no record exists, create one
+    if (!application) {
+      application = new EventApplication({
+        event_id: eventObjectId,
+        seeker_id: seekerObjectId,
+        paymentStatus: "completed",
+        razorpay_payment_id: paymentId,
+        paymentAmount: amount || event.paymentAmount,
+        paymentReceivedAt: new Date(),
+      });
+      await application.save();
     }
 
     return res.status(200).json({
       success: true,
-      message: "Payment updated successfully",
-      data: updated,
+      message: "Payment stored successfully",
+      data: application,
     });
   } catch (err) {
     console.error("Update Payment Status Error:", err);
