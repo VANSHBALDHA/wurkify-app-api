@@ -8,6 +8,9 @@ const {
   getPaymentEventList,
   getEventUserPayments,
   updatePaymentStatus,
+  releasePaymentToSeeker,
+  getWalletDetails,
+  getSeekerEarnings,
 } = require("../controllers/PaymentController");
 
 // ✅ Organizer: Get all events with payment info
@@ -18,5 +21,14 @@ router.post("/event-users", upload.none(), getEventUserPayments);
 
 // ✅ Flutter: Update payment status after successful payment
 router.post("/update-payment", upload.none(), updatePaymentStatus);
+
+// ✅ Organizer releases payment to seeker’s wallet
+router.post("/release-payment", upload.none(), releasePaymentToSeeker);
+
+// ✅ Seeker: Fetch wallet balance and transaction history
+router.post("/wallet", upload.none(), getWalletDetails);
+
+// ✅ Seeker: Get all credited payments and total earnings
+router.post("/seeker-earnings", upload.none(), getSeekerEarnings);
 
 module.exports = router;

@@ -3,8 +3,93 @@ const Event = require("../models/Event");
 const EventApplication = require("../models/EventApplication");
 const UserAuth = require("../models/AuthUsers");
 const mongoose = require("mongoose");
+const Wallet = require("../models/Wallet");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
+
+/**
+ * ✅ Organizer releases payment to seeker (credits their wallet)
+ */
+const releasePaymentToSeeker = async (req, res) => {
+  try {
+    const { eventId, seekerId, amount } = req.body;
+
+    if (!eventId || !seekerId || !amount) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing fields" });
+    }
+
+    // Find or create wallet for seeker
+    let wallet = await Wallet.findOne({ seeker_id: seekerId });
+    if (!wallet) {
+      wallet = new Wallet({ seeker_id: seekerId, balance: 0 });
+    }
+
+    // Add credit transaction
+    wallet.balance += amount;
+    wallet.transactions.push({
+      type: "credit",
+      amount,
+      event_id: eventId,
+      description: "Payment received for completed event",
+    });
+
+    await wallet.save();
+
+    // Mark payment as credited in EventApplication
+    await EventApplication.findOneAndUpdate(
+      { event_id: eventId, seeker_id: seekerId },
+      { paymentStatus: "credited" },
+      { new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment credited to seeker's wallet successfully",
+      data: wallet,
+    });
+  } catch (err) {
+    console.error("Release Payment Error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+/**
+ * ✅ Seeker: Fetch wallet balance and transactions
+ */
+const getWalletDetails = async (req, res) => {
+  try {
+    const { seekerId } = req.body;
+    if (!seekerId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Seeker ID required" });
+    }
+
+    const wallet = await Wallet.findOne({ seeker_id: seekerId }).populate(
+      "transactions.event_id",
+      "eventName location"
+    );
+
+    if (!wallet) {
+      return res.status(200).json({
+        success: true,
+        message: "Wallet not found, returning empty balance",
+        wallet: { balance: 0, transactions: [] },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Wallet details fetched successfully",
+      wallet,
+    });
+  } catch (err) {
+    console.error("Get Wallet Error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 /**
  * Organizer: Fetch all events with payment summary
@@ -193,8 +278,64 @@ const updatePaymentStatus = async (req, res) => {
   }
 };
 
+/**
+ * ✅ Seeker: Get all credited payments + total earning
+ */
+const getSeekerEarnings = async (req, res) => {
+  try {
+    const { seekerId } = req.body;
+
+    if (!seekerId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Seeker ID is required" });
+    }
+
+    // Fetch wallet
+    const wallet = await Wallet.findOne({ seeker_id: seekerId }).populate(
+      "transactions.event_id",
+      "eventName"
+    );
+
+    if (!wallet || wallet.transactions.length === 0) {
+      return res.status(200).json({
+        success: true,
+        totalEarnings: 0,
+        transactions: [],
+      });
+    }
+
+    // Map transactions in UI-friendly format
+    const formattedTransactions = wallet.transactions
+      .filter((t) => t.type === "credit") // only credits
+      .sort((a, b) => b.date - a.date) // latest first
+      .map((t) => ({
+        title: `Event Payment - ${t.event_id?.eventName || "Unknown Event"}`,
+        amount: t.amount,
+        type: t.type,
+        date: t.date,
+      }));
+
+    const totalEarnings = wallet.transactions
+      .filter((t) => t.type === "credit")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    return res.status(200).json({
+      success: true,
+      totalEarnings,
+      transactions: formattedTransactions,
+    });
+  } catch (err) {
+    console.error("Get Seeker Earnings Error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 module.exports = {
   getPaymentEventList,
   getEventUserPayments,
   updatePaymentStatus,
+  releasePaymentToSeeker,
+  getWalletDetails,
+  getSeekerEarnings,
 };
