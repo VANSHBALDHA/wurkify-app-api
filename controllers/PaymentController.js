@@ -33,6 +33,7 @@ const releasePaymentToSeeker = async (req, res) => {
       amount,
       event_id: eventId,
       description: "Payment received for completed event",
+      date: new Date(),
     });
 
     await wallet.save();
@@ -216,7 +217,7 @@ const getEventUserPayments = async (req, res) => {
 
 /**
  * ✅ Flutter-based payment success handler
- * This API will be called after payment success in Flutter app.
+ * Auto credits seeker’s wallet on payment success
  */
 const updatePaymentStatus = async (req, res) => {
   try {
@@ -228,11 +229,9 @@ const updatePaymentStatus = async (req, res) => {
         .json({ success: false, message: "Missing fields" });
     }
 
-    // ✅ Convert to ObjectId to avoid type mismatch
     const eventObjectId = new mongoose.Types.ObjectId(eventId);
     const seekerObjectId = new mongoose.Types.ObjectId(seekerId);
 
-    // ✅ Ensure event exists
     const event = await Event.findById(eventObjectId);
     if (!event) {
       return res
@@ -240,7 +239,7 @@ const updatePaymentStatus = async (req, res) => {
         .json({ success: false, message: "Event not found" });
     }
 
-    // ✅ Try to update existing application
+    // ✅ Update or create application
     let application = await EventApplication.findOneAndUpdate(
       { event_id: eventObjectId, seeker_id: seekerObjectId },
       {
@@ -251,26 +250,36 @@ const updatePaymentStatus = async (req, res) => {
           paymentReceivedAt: new Date(),
         },
       },
-      { new: true }
+      { new: true, upsert: true }
     );
 
-    // ✅ If no record exists, create one
-    if (!application) {
-      application = new EventApplication({
-        event_id: eventObjectId,
+    // ✅ Auto credit to wallet
+    let wallet = await Wallet.findOne({ seeker_id: seekerObjectId });
+    if (!wallet) {
+      wallet = new Wallet({
         seeker_id: seekerObjectId,
-        paymentStatus: "completed",
-        razorpay_payment_id: paymentId,
-        paymentAmount: amount || event.paymentAmount,
-        paymentReceivedAt: new Date(),
+        balance: 0,
+        transactions: [],
       });
-      await application.save();
     }
+
+    const creditAmount = amount || event.paymentAmount;
+
+    wallet.balance += creditAmount;
+    wallet.transactions.push({
+      type: "credit",
+      amount: creditAmount,
+      event_id: eventObjectId,
+      description: "Payment received for event",
+      date: new Date(),
+    });
+
+    await wallet.save();
 
     return res.status(200).json({
       success: true,
-      message: "Payment stored successfully",
-      data: application,
+      message: "Payment stored and credited successfully",
+      data: { application, wallet },
     });
   } catch (err) {
     console.error("Update Payment Status Error:", err);
@@ -283,14 +292,6 @@ const updatePaymentStatus = async (req, res) => {
  */
 const getSeekerEarnings = async (req, res) => {
   try {
-    // const { seekerId } = req.body;
-
-    // if (!seekerId) {
-    //   return res
-    //     .status(400)
-    //     .json({ success: false, message: "Seeker ID is required" });
-    // }
-
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -315,10 +316,9 @@ const getSeekerEarnings = async (req, res) => {
       });
     }
 
-    // Map transactions in UI-friendly format
     const formattedTransactions = wallet.transactions
-      .filter((t) => t.type === "credit") // only credits
-      .sort((a, b) => b.date - a.date) // latest first
+      .filter((t) => t.type === "credit")
+      .sort((a, b) => b.date - a.date)
       .map((t) => ({
         title: `Event Payment - ${t.event_id?.eventName || "Unknown Event"}`,
         amount: t.amount,
