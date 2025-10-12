@@ -222,12 +222,12 @@ const upsertProfile = async (req, res) => {
         ? uploadedPhotos
         : existingProfile?.photos || [];
 
-    if (finalPhotos.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: "You must have at least 2 photos in your profile.",
-      });
-    }
+    // if (finalPhotos.length < 2) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "You must have at least 2 photos in your profile.",
+    //   });
+    // }
 
     // ✅ Update / insert profile
     const updateData = {
