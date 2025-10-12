@@ -106,26 +106,26 @@ const getProfileDetails = async (req, res) => {
 const upsertProfile = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        message: "Authorization token missing or invalid",
-      });
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({
+          success: false,
+          message: "Authorization token missing or invalid",
+        });
     }
 
     const token = authHeader.split(" ")[1];
     let decoded;
     try {
       decoded = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid or expired token",
-      });
+    } catch {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid or expired token" });
     }
 
     const userId = decoded._id;
-
     const {
       name,
       email,
@@ -144,38 +144,36 @@ const upsertProfile = async (req, res) => {
 
     let parsedSkills = [];
     let parsedEducation = {};
+    let parsedBirthdate = null;
 
     if (typeof skills === "string") {
-      const rawSkills = JSON.parse(skills);
-      parsedSkills = rawSkills.map((s) => ({
+      parsedSkills = JSON.parse(skills).map((s) => ({
         name: s.skillName || s.name,
         proficiency: s.proficiency || "",
       }));
     }
 
-    if (typeof education === "string") {
-      parsedEducation = JSON.parse(education);
-    }
+    if (typeof education === "string") parsedEducation = JSON.parse(education);
 
-    let parsedBirthdate = null;
     if (birthdate) {
       const m = moment(birthdate, "DD-MM-YYYY", true);
       if (!m.isValid()) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid birthdate format. Use DD-MM-YYYY",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Invalid birthdate format. Use DD-MM-YYYY",
+          });
       }
       parsedBirthdate = m.toDate();
     }
 
-    // ✅ Handle single profile image
-    let imageUrl = null;
-    if (
-      req.files &&
-      req.files.profile_img &&
-      req.files.profile_img.length > 0
-    ) {
+    // ✅ Fetch existing profile first
+    const existingProfile = await UserProfile.findOne({ userId });
+
+    // ✅ Handle new profile image upload (single)
+    let imageUrl = existingProfile?.profile_img || null;
+    if (req.files?.profile_img?.length > 0) {
       const file = req.files.profile_img[0];
       const result = await new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
@@ -187,36 +185,51 @@ const upsertProfile = async (req, res) => {
       imageUrl = result.secure_url;
     }
 
-    // ✅ Handle multiple gallery photos
+    // ✅ Handle multiple gallery photos (replace old ones)
     let uploadedPhotos = [];
-    if (req.files && req.files.photos && req.files.photos.length > 0) {
-      const uploadPromises = req.files.photos.map((file) => {
-        return new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            { folder: "user_photos", resource_type: "image" },
-            (error, result) =>
-              result ? resolve(result.secure_url) : reject(error)
-          );
-          streamifier.createReadStream(file.buffer).pipe(stream);
+    if (req.files?.photos?.length > 0) {
+      // 1️⃣ Delete existing photos from Cloudinary
+      if (existingProfile?.photos?.length > 0) {
+        const deletePromises = existingProfile.photos.map(async (url) => {
+          try {
+            const publicId = url.split("/").pop().split(".")[0]; // Extract filename
+            await cloudinary.uploader.destroy(`user_photos/${publicId}`);
+          } catch (err) {
+            console.warn("Cloudinary delete failed:", err);
+          }
         });
-      });
+        await Promise.all(deletePromises);
+      }
+
+      // 2️⃣ Upload new photos
+      const uploadPromises = req.files.photos.map(
+        (file) =>
+          new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              { folder: "user_photos", resource_type: "image" },
+              (error, result) =>
+                result ? resolve(result.secure_url) : reject(error)
+            );
+            streamifier.createReadStream(file.buffer).pipe(stream);
+          })
+      );
       uploadedPhotos = await Promise.all(uploadPromises);
     }
 
-    // ✅ 3️⃣ Fetch existing profile to check current photo count
-    const existingProfile = await UserProfile.findOne({ userId });
-    const existingPhotos = existingProfile?.photos || [];
+    // ✅ If no new upload, keep old photos
+    const finalPhotos =
+      uploadedPhotos.length > 0
+        ? uploadedPhotos
+        : existingProfile?.photos || [];
 
-    const totalPhotos = [...existingPhotos, ...uploadedPhotos];
-
-    if (totalPhotos.length < 2) {
+    if (finalPhotos.length < 2) {
       return res.status(400).json({
         success: false,
         message: "You must have at least 2 photos in your profile.",
       });
     }
 
-    // ✅ 4️⃣ Update / insert profile
+    // ✅ Update / insert profile
     const updateData = {
       ...(imageUrl && { profile_img: imageUrl }),
       ...(name && { name }),
@@ -234,7 +247,7 @@ const upsertProfile = async (req, res) => {
         education: parsedEducation,
       }),
       ...(address && { address }),
-      photos: totalPhotos, // ✅ store combined photos
+      photos: finalPhotos, // ✅ Replace with new or keep old
     };
 
     const profile = await UserProfile.findOneAndUpdate(
