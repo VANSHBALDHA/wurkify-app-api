@@ -5,6 +5,7 @@ const UserAuth = require("../models/AuthUsers");
 const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
 const axios = require("axios");
+const { sendNotification } = require("../middlewares/notificationService");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -21,13 +22,35 @@ const releasePaymentToSeeker = async (req, res) => {
         .json({ success: false, message: "Missing fields" });
     }
 
-    // Find or create wallet for seeker
+    // ✅ Validate organizer
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const organizerId = decoded._id;
+
+    // ✅ Verify event ownership
+    const event = await Event.findOne({
+      _id: eventId,
+      organizer_id: organizerId,
+    });
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or not owned by you",
+      });
+    }
+
+    // ✅ Find or create wallet for seeker
     let wallet = await Wallet.findOne({ seeker_id: seekerId });
     if (!wallet) {
       wallet = new Wallet({ seeker_id: seekerId, balance: 0 });
     }
 
-    // Add credit transaction
+    // ✅ Add credit transaction
     wallet.balance += amount;
     wallet.transactions.push({
       type: "credit",
@@ -39,12 +62,51 @@ const releasePaymentToSeeker = async (req, res) => {
 
     await wallet.save();
 
-    // Mark payment as credited in EventApplication
+    // ✅ Mark payment as credited in EventApplication
     await EventApplication.findOneAndUpdate(
       { event_id: eventId, seeker_id: seekerId },
-      { paymentStatus: "credited" },
+      { paymentStatus: "credited", paymentReceivedAt: new Date() },
       { new: true }
     );
+
+    // ✅ Check if all seekers for this event are paid
+    const allApplications = await EventApplication.find({ event_id: eventId });
+    const allPaid = allApplications.every(
+      (a) => a.paymentStatus === "completed" || a.paymentStatus === "credited"
+    );
+
+    if (allPaid) {
+      // ✅ Mark the event as completed automatically
+      await Event.findByIdAndUpdate(eventId, { eventStatus: "completed" });
+
+      // ✅ Delete the event group if exists
+      const deletedGroup = await Group.findOneAndDelete({ event_id: eventId });
+      if (deletedGroup) {
+        console.log(
+          `🗑️ Group deleted automatically for completed event: ${event.eventName}`
+        );
+      }
+
+      // ✅ Notify all accepted seekers
+      const acceptedSeekers = allApplications.filter(
+        (a) => a.applicationStatus === "accepted"
+      );
+
+      for (const seeker of acceptedSeekers) {
+        await sendNotification({
+          sender_id: organizerId,
+          receiver_id: seeker.seeker_id,
+          event_id: eventId,
+          type: "event-completed",
+          title: "Event Completed 🎉",
+          message: `All payments for the event "${event.eventName}" have been completed. The event is now marked as completed.`,
+        });
+      }
+
+      console.log(
+        `✅ Event ${event.eventName} automatically marked as completed.`
+      );
+    }
 
     return res.status(200).json({
       success: true,

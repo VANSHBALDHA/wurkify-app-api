@@ -12,7 +12,6 @@ const Message = require("./models/Message");
 const admin = require("./firebase");
 const UserProfile = require("./models/UserProfile");
 
-
 dotenv.config();
 connectDB();
 
@@ -73,10 +72,15 @@ io.on("connection", (socket) => {
       io.to(message.groupId).emit("new-message", message);
 
       // 2. Send Firebase push to group members (except sender)
-      const group = await require("./models/Group").findById(message.groupId).lean();
+      const group = await require("./models/Group")
+        .findById(message.groupId)
+        .lean();
       if (!group) return;
 
-      const senderProfile = await UserProfile.findOne({ userId: message.sender._id }, "profile_img").lean();
+      const senderProfile = await UserProfile.findOne(
+        { userId: message.sender._id },
+        "profile_img"
+      ).lean();
 
       // Get all group members except sender
       const targetUserIds = group.members
@@ -85,7 +89,10 @@ io.on("connection", (socket) => {
 
       // Fetch FCM tokens for target users
       const tokens = await require("./models/AuthUsers")
-        .find({ _id: { $in: targetUserIds }, fcmToken: { $exists: true, $ne: "" } }, "fcmToken")
+        .find(
+          { _id: { $in: targetUserIds }, fcmToken: { $exists: true, $ne: "" } },
+          "fcmToken"
+        )
         .lean();
 
       const fcmTokens = tokens.map((t) => t.fcmToken);
@@ -95,7 +102,9 @@ io.on("connection", (socket) => {
           tokens: fcmTokens,
           notification: {
             title: message.sender.name,
-            body: message.text || (message.media?.length ? "📎 Media" : "New Message"),
+            body:
+              message.text ||
+              (message.media?.length ? "📎 Media" : "New Message"),
             imageUrl: senderProfile?.profile_img || undefined,
           },
           data: {
@@ -150,6 +159,7 @@ app.use("/api/payment", require("./routes/paymetRoutes"));
 app.use("/api/attendees", require("./routes/attendee"));
 app.use("/api/messages", require("./routes/messageRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
+app.use("/api", require("./routes/usersearch"));
 
 app.use(cookieParser());
 app.use(errorMiddleware);

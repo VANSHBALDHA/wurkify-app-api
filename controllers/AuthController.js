@@ -6,6 +6,8 @@ const config = require("../config/nodemailer");
 const moment = require("moment");
 const jwt = require("jsonwebtoken");
 const UserProfile = require("../models/UserProfile");
+const { OAuth2Client } = require("google-auth-library");
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 const JWT_EXPIRES_IN = "7d";
@@ -331,6 +333,99 @@ const userLogin = async (req, res) => {
   }
 };
 
+const googleAuth = async (req, res) => {
+  try {
+    const { idToken, role, fcm_token } = req.body;
+
+    if (!idToken) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing Google ID token" });
+    }
+
+    // ✅ Verify Google token
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Google account must have a verified email",
+      });
+    }
+
+    // ✅ Check if user already exists
+    let user = await UserAuth.findOne({ email });
+
+    if (!user) {
+      user = await UserAuth.create({
+        name,
+        email,
+        googleId,
+        profile_img: picture || null,
+        isVerified: true,
+        role: role || "seeker",
+      });
+
+      await UserProfile.create({
+        userId: user._id,
+        profile_img: picture || "",
+      });
+    } else if (!user.googleId) {
+      user.googleId = googleId;
+      user.profile_img = user.profile_img || picture;
+      await user.save();
+    }
+
+    if (fcm_token) {
+      await UserProfile.findOneAndUpdate(
+        { userId: user._id },
+        { fcm_token },
+        { upsert: true }
+      );
+    }
+
+    // ✅ Generate JWT
+    const token = jwt.sign(
+      {
+        _id: user._id.toString(),
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+        name: user.name,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    user.token = token;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Google login successful",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        profile_img: user.profile_img || picture,
+        googleId: user.googleId,
+        fcm_token: fcm_token || null,
+      },
+    });
+  } catch (err) {
+    console.error("Google Auth Error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -563,6 +658,7 @@ module.exports = {
   registerUser,
   verifyOtp,
   userLogin,
+  googleAuth,
   forgotPassword,
   resetOtp,
   verifyForgotOtp,

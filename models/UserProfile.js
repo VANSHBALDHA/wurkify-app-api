@@ -10,6 +10,10 @@ const UserProfileSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  photos: {
+    type: [String],
+    default: [],
+  },
   name: String,
   email: String,
   phone: String,
@@ -38,8 +42,10 @@ const UserProfileSchema = new mongoose.Schema({
     linkedin: { type: String, default: "" },
   },
   documentation: {
-    aadharNumber: String,
-    panNumber: String,
+    aadharNumber: { type: String, default: "" },
+    aadharImage: { type: String, default: "" },
+    panNumber: { type: String, default: "" },
+    panImage: { type: String, default: "" },
   },
   bankDetails: {
     accountNumber: { type: String },

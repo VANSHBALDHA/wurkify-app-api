@@ -19,8 +19,12 @@ const userAuthSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
       minlength: 6,
+      default: null, // ✅ Google users won’t have passwords
+    },
+    googleId: {
+      type: String,
+      default: null, // ✅ store Google sub ID
     },
     phone: {
       type: String,

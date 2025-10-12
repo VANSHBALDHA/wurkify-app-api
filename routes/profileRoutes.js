@@ -17,9 +17,23 @@ const jwt = require("jsonwebtoken");
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
 router.post("/", upload.none(), getProfileDetails);
-router.post("/update-profile", upload.single("profile_img"), upsertProfile);
+router.post(
+  "/update-profile",
+  upload.fields([
+    { name: "profile_img", maxCount: 1 },
+    { name: "photos", maxCount: 10 },
+  ]),
+  upsertProfile
+);
 router.post("/social-links", upload.none(), updateSocialLinks);
-router.post("/documentation", upload.none(), upsertDocumentation);
+router.post(
+  "/documentation",
+  upload.fields([
+    { name: "aadharImage", maxCount: 1 },
+    { name: "panImage", maxCount: 1 },
+  ]),
+  upsertDocumentation
+);
 router.post("/bank-details", upload.none(), upsertBankDetails);
 router.post("/work-experience", upload.none(), upsertWorkExperience);
 

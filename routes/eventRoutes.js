@@ -8,13 +8,18 @@ const {
   updateEventStatus,
   deleteEvent,
   applyToEvent,
-  getSeekerRecentActivity,
   getApplicantsByEvent,
   updateApplicationStatus,
+} = require("../controllers/eventController");
+
+const {
+  getSeekerRecentActivity,
   getOrganizerDashboard,
   viewSeekerDetails,
-  getMyAppliedEvents
-} = require("../controllers/eventController");
+  getMyAppliedEvents,
+  getOrganizerPaymentHistory,
+} = require("../controllers/DashboardController");
+
 const multer = require("multer");
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
@@ -32,5 +37,10 @@ router.post("/application-status", upload.none(), updateApplicationStatus);
 router.post("/organizer/dashboard", upload.none(), getOrganizerDashboard);
 router.post("/organizer/view-seeker", upload.none(), viewSeekerDetails);
 router.get("/my-applied-events", upload.none(), getMyAppliedEvents);
+router.post(
+  "/organizer/payment-history",
+  upload.none(),
+  getOrganizerPaymentHistory
+);
 
 module.exports = router;

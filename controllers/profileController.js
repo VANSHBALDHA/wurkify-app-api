@@ -73,6 +73,7 @@ const getProfileDetails = async (req, res) => {
         gender: user.gender,
         role: user.role,
         profile_img: profile?.profile_img || "",
+        photos: profile?.photos.length > 0 ? profile?.photos : [],
 
         age: profile?.age || null,
         city: profile?.city || null,
@@ -168,28 +169,54 @@ const upsertProfile = async (req, res) => {
       parsedBirthdate = m.toDate();
     }
 
+    // ✅ Handle single profile image
     let imageUrl = null;
-    if (req.file) {
-      const streamUpload = () => {
-        return new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            { folder: "profile_images", resource_type: "image" },
-            (error, result) => {
-              if (result) {
-                resolve(result);
-              } else {
-                reject(error);
-              }
-            }
-          );
-          streamifier.createReadStream(req.file.buffer).pipe(stream);
-        });
-      };
-
-      const result = await streamUpload();
+    if (
+      req.files &&
+      req.files.profile_img &&
+      req.files.profile_img.length > 0
+    ) {
+      const file = req.files.profile_img[0];
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "profile_images", resource_type: "image" },
+          (error, result) => (result ? resolve(result) : reject(error))
+        );
+        streamifier.createReadStream(file.buffer).pipe(stream);
+      });
       imageUrl = result.secure_url;
     }
 
+    // ✅ Handle multiple gallery photos
+    let uploadedPhotos = [];
+    if (req.files && req.files.photos && req.files.photos.length > 0) {
+      const uploadPromises = req.files.photos.map((file) => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: "user_photos", resource_type: "image" },
+            (error, result) =>
+              result ? resolve(result.secure_url) : reject(error)
+          );
+          streamifier.createReadStream(file.buffer).pipe(stream);
+        });
+      });
+      uploadedPhotos = await Promise.all(uploadPromises);
+    }
+
+    // ✅ 3️⃣ Fetch existing profile to check current photo count
+    const existingProfile = await UserProfile.findOne({ userId });
+    const existingPhotos = existingProfile?.photos || [];
+
+    const totalPhotos = [...existingPhotos, ...uploadedPhotos];
+
+    if (totalPhotos.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: "You must have at least 2 photos in your profile.",
+      });
+    }
+
+    // ✅ 4️⃣ Update / insert profile
     const updateData = {
       ...(imageUrl && { profile_img: imageUrl }),
       ...(name && { name }),
@@ -207,6 +234,7 @@ const upsertProfile = async (req, res) => {
         education: parsedEducation,
       }),
       ...(address && { address }),
+      photos: totalPhotos, // ✅ store combined photos
     };
 
     const profile = await UserProfile.findOneAndUpdate(
@@ -316,25 +344,57 @@ const upsertDocumentation = async (req, res) => {
     }
 
     const aadharRegex = /^\d{12}$/;
+    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+
     if (!aadharRegex.test(aadharNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: "Aadhar number must be a 12-digit number",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Aadhar number must be 12 digits" });
     }
 
-    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
     if (!panRegex.test(panNumber)) {
       return res.status(400).json({
         success: false,
-        message: "PAN number must follow format: 5 letters, 4 digits, 1 letter",
+        message: "PAN must follow format: 5 letters, 4 digits, 1 letter",
       });
+    }
+
+    const uploadToCloudinary = (fileBuffer, folder) => {
+      return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder, resource_type: "image" },
+          (error, result) => {
+            if (result) resolve(result.secure_url);
+            else reject(error);
+          }
+        );
+        streamifier.createReadStream(fileBuffer).pipe(stream);
+      });
+    };
+
+    let aadharImageUrl = null;
+    let panImageUrl = null;
+
+    if (req.files && req.files.aadharImage?.length > 0) {
+      aadharImageUrl = await uploadToCloudinary(
+        req.files.aadharImage[0].buffer,
+        "user_docs"
+      );
+    }
+
+    if (req.files && req.files.panImage?.length > 0) {
+      panImageUrl = await uploadToCloudinary(
+        req.files.panImage[0].buffer,
+        "user_docs"
+      );
     }
 
     const updateData = {
       documentation: {
         aadharNumber,
         panNumber,
+        ...(aadharImageUrl && { aadharImage: aadharImageUrl }),
+        ...(panImageUrl && { panImage: panImageUrl }),
       },
     };
 
