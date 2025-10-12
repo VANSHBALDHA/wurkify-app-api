@@ -217,12 +217,12 @@ const upsertProfile = async (req, res) => {
     // ✅ Merge kept + new
     const finalPhotos = [...keptPhotos, ...newUploadedPhotos];
 
-    if (finalPhotos.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: "You must have at least 2 photos in your profile.",
-      });
-    }
+    // if (finalPhotos.length < 2) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "You must have at least 2 photos in your profile.",
+    //   });
+    // }
 
     // ✅ Handle single profile image upload
     let imageUrl = existingProfile?.profile_img || null;
