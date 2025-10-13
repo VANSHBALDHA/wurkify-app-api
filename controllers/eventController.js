@@ -1212,7 +1212,7 @@ const updateApplicationStatus = async (req, res) => {
   }
 };
 
-const getSeekerAppliedEvents = async (req, res) => {
+const getSeekerEvents = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer "))
@@ -1222,6 +1222,7 @@ const getSeekerAppliedEvents = async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const seekerId = decoded._id;
 
+    // Validate seeker role
     const user = await UserAuth.findById(seekerId);
     if (!user || user.role !== "seeker") {
       return res
@@ -1229,19 +1230,29 @@ const getSeekerAppliedEvents = async (req, res) => {
         .json({ success: false, message: "Access denied (seeker only)" });
     }
 
-    const applications = await EventApplication.find({ seeker_id: seekerId })
+    // Query param: applied | accepted
+    const { type } = req.body;
+    let filter = { seeker_id: seekerId };
+
+    if (type === "accepted") {
+      filter.applicationStatus = "accepted";
+    }
+
+    // Fetch events
+    const applications = await EventApplication.find(filter)
       .sort({ createdAt: -1 })
       .populate("event_id");
 
     if (!applications.length) {
       return res.status(200).json({
         success: true,
-        message: "No applied events found",
+        message: `No ${type || "applied"} events found`,
         total: 0,
         events: [],
       });
     }
 
+    // Format response
     const formatted = applications.map((app) => ({
       event_id: app.event_id?._id,
       eventName: app.event_id?.eventName,
@@ -1257,60 +1268,14 @@ const getSeekerAppliedEvents = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Applied events fetched successfully",
+      message: `${
+        type === "accepted" ? "Accepted" : "Applied"
+      } events fetched successfully`,
       total: formatted.length,
       events: formatted,
     });
   } catch (err) {
-    console.error("getSeekerAppliedEvents Error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-};
-
-const getSeekerAcceptedEvents = async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith("Bearer "))
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const seekerId = decoded._id;
-
-    const user = await UserAuth.findById(seekerId);
-    if (!user || user.role !== "seeker") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Access denied (seeker only)" });
-    }
-
-    const acceptedApplications = await EventApplication.find({
-      seeker_id: seekerId,
-      applicationStatus: "accepted",
-    })
-      .sort({ createdAt: -1 })
-      .populate("event_id");
-
-    const formatted = acceptedApplications.map((app) => ({
-      event_id: app.event_id?._id,
-      eventName: app.event_id?.eventName,
-      location: app.event_id?.location,
-      startDate: app.event_id?.startDate,
-      endDate: app.event_id?.endDate,
-      paymentAmount: app.event_id?.paymentAmount,
-      eventStatus: app.event_id?.eventStatus,
-      paymentStatus: app.paymentStatus || "unpaid",
-      appliedAt: app.createdAt,
-    }));
-
-    return res.status(200).json({
-      success: true,
-      message: "Accepted events fetched successfully",
-      total: formatted.length,
-      events: formatted,
-    });
-  } catch (err) {
-    console.error("getSeekerAcceptedEvents Error:", err);
+    console.error("getSeekerEvents Error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -1402,7 +1367,6 @@ module.exports = {
   applyToEvent,
   getApplicantsByEvent,
   updateApplicationStatus,
-  getSeekerAppliedEvents,
-  getSeekerAcceptedEvents,
   getSeekerTotalEarnings,
+  getSeekerEvents,
 };
