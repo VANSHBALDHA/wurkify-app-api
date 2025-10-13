@@ -75,6 +75,23 @@ const getSeekerRecentActivity = async (req, res) => {
       status: "unread",
     });
 
+    // ✅ Calculate total earnings (sum of all completed payments)
+    const earningsAgg = await EventApplication.aggregate([
+      {
+        $match: {
+          seeker_id: new mongoose.Types.ObjectId(seekerId),
+          paymentStatus: "completed",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalEarnings: { $sum: "$paymentAmount" },
+        },
+      },
+    ]);
+    const totalEarnings = earningsAgg[0]?.totalEarnings || 0;
+
     // ✅ Build last 12 months
     const now = new Date();
     const months = [];
@@ -136,6 +153,7 @@ const getSeekerRecentActivity = async (req, res) => {
         totalApplied,
         totalAccepted,
         notificationCount,
+        totalEarnings, // ✅ added total earnings to stats
         graphData,
       },
     });
