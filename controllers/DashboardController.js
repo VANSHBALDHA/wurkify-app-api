@@ -4,6 +4,7 @@ const UserAuth = require("../models/AuthUsers");
 const EventApplication = require("../models/EventApplication");
 const Notification = require("../models/Notification");
 const UserProfile = require("../models/UserProfile");
+const mongoose = require("mongoose");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -26,6 +27,7 @@ const getSeekerRecentActivity = async (req, res) => {
       });
     }
 
+    // ✅ Fetch latest 5 applications
     const applications = await EventApplication.find({ seeker_id: seekerId })
       .sort({ createdAt: -1 })
       .limit(5)
@@ -33,9 +35,8 @@ const getSeekerRecentActivity = async (req, res) => {
 
     const recentActivity = await Promise.all(
       applications
-        .filter((app) => app.event_id !== null)
+        .filter((app) => app.event_id)
         .map(async (app) => {
-          // 🔍 Organizer profile
           const organizerProfile = await UserProfile.findOne(
             { userId: app.event_id.organizer_id },
             "profile_img"
@@ -50,20 +51,23 @@ const getSeekerRecentActivity = async (req, res) => {
             organizer_name: app.event_id.organizer_name,
             organizer_img: organizerProfile
               ? organizerProfile.profile_img
-              : null, // ✅ added
-            appliedAt: app.createdAt,
-            applicantStatus: app.applicationStatus,
+              : null,
+            appliedAt: app.appliedAt,
+            applicationStatus: app.applicationStatus,
+            paymentStatus: app.paymentStatus,
+            paymentAmount: app.paymentAmount,
           };
         })
     );
 
+    // ✅ Basic counts
     const totalApplied = await EventApplication.countDocuments({
       seeker_id: seekerId,
     });
 
     const totalAccepted = await EventApplication.countDocuments({
       seeker_id: seekerId,
-      status: "accepted",
+      applicationStatus: "accepted",
     });
 
     const notificationCount = await Notification.countDocuments({
@@ -71,44 +75,54 @@ const getSeekerRecentActivity = async (req, res) => {
       status: "unread",
     });
 
-    const last12Months = Array.from({ length: 12 }).map((_, i) => {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      return { month: d.getMonth() + 1, year: d.getFullYear() };
-    });
+    // ✅ Build last 12 months
+    const now = new Date();
+    const months = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const start = new Date(d.getFullYear(), d.getMonth(), 1);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      months.push({
+        label: `${d.getFullYear()}-${(d.getMonth() + 1)
+          .toString()
+          .padStart(2, "0")}`,
+        start,
+        end,
+      });
+    }
 
+    // ✅ Graph data: Applications & Earnings
     const graphData = await Promise.all(
-      last12Months.map(async ({ month, year }) => {
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month, 1);
-
-        const eventsInMonth = await EventApplication.countDocuments({
+      months.map(async ({ label, start, end }) => {
+        // Applications count
+        const appliedEvents = await EventApplication.countDocuments({
           seeker_id: seekerId,
-          createdAt: { $gte: start, $lt: end },
+          appliedAt: { $gte: start, $lt: end },
         });
 
-        const earningsInMonthAgg = await EventApplication.aggregate([
+        // Earnings sum (from completed payments)
+        const earningsAgg = await EventApplication.aggregate([
           {
             $match: {
-              seeker_id: seekerId,
-              status: "accepted",
-              createdAt: { $gte: start, $lt: end },
+              seeker_id: new mongoose.Types.ObjectId(seekerId),
+              paymentStatus: "completed",
+              paymentReceivedAt: { $gte: start, $lt: end },
             },
           },
           {
             $group: {
               _id: null,
-              total: { $sum: "$amountPaid" },
+              totalEarnings: { $sum: "$paymentAmount" },
             },
           },
         ]);
 
-        const earningsInMonth = earningsInMonthAgg[0]?.total || 0;
+        const earnings = earningsAgg[0]?.totalEarnings || 0;
 
         return {
-          month: `${year}-${month.toString().padStart(2, "0")}`,
-          events: eventsInMonth,
-          earnings: earningsInMonth,
+          month: label,
+          appliedEvents,
+          earnings,
         };
       })
     );
@@ -122,7 +136,7 @@ const getSeekerRecentActivity = async (req, res) => {
         totalApplied,
         totalAccepted,
         notificationCount,
-        graphData: graphData.reverse(), // Latest first
+        graphData,
       },
     });
   } catch (err) {

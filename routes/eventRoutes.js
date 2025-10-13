@@ -10,6 +10,9 @@ const {
   applyToEvent,
   getApplicantsByEvent,
   updateApplicationStatus,
+  getSeekerAppliedEvents,
+  getSeekerAcceptedEvents,
+  getSeekerTotalEarnings,
 } = require("../controllers/eventController");
 
 const {
@@ -42,5 +45,8 @@ router.post(
   upload.none(),
   getOrganizerPaymentHistory
 );
+router.get("/seeker/applied-events", upload.none(), getSeekerAppliedEvents);
+router.get("/seeker/accepted-events", upload.none(), getSeekerAcceptedEvents);
+router.get("/seeker/total-earnings", upload.none(), getSeekerTotalEarnings);
 
 module.exports = router;

@@ -16,7 +16,15 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["event", "system", "application", "earning", "custom", "attendance"],
+      enum: [
+        "event",
+        "system",
+        "application",
+        "earning",
+        "custom",
+        "attendance",
+        "checkout",
+      ],
       default: "custom",
     },
     event_id: {

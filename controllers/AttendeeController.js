@@ -1,14 +1,14 @@
 const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 const AttendeeCheckin = require("../models/AttendeeCheckin");
 const Event = require("../models/Event");
 const UserAuth = require("../models/AuthUsers");
-const { format } = require("date-fns");
 const EventApplication = require("../models/EventApplication");
 const { sendNotification } = require("../middlewares/notificationService");
 const UserProfile = require("../models/UserProfile");
-
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
+const { format } = require("date-fns");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -21,30 +21,26 @@ const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 const calculateDuration = (checkinTime, checkoutTime) => {
   if (!checkinTime || !checkoutTime) return null;
   const diffMs = new Date(checkoutTime) - new Date(checkinTime);
-  const diffMins = Math.floor(diffMs / 60000);
-  const hours = Math.floor(diffMins / 60);
-  const mins = diffMins % 60;
-  return { hours, mins, totalMinutes: diffMins };
+  const hours = Math.floor(diffMs / 3600000);
+  const mins = Math.floor((diffMs % 3600000) / 60000);
+  return { hours, mins, totalMinutes: hours * 60 + mins };
 };
 
-const formatDateTime = (date) => {
-  if (!date) return null;
-  return format(new Date(date), "dd-MM-yyyy hh:mm:ss a");
-};
+const formatDateTime = (date) =>
+  date ? format(new Date(date), "dd-MM-yyyy hh:mm:ss a") : null;
 
+/* =============== CHECK-IN =============== */
 const submitCheckin = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded._id;
-
     const { eventId } = req.body;
-    if (!eventId || !req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "eventId & checkinSelfie are required",
-      });
-    }
+
+    if (!eventId || !req.file)
+      return res
+        .status(400)
+        .json({ success: false, message: "eventId & selfie required" });
 
     const event = await Event.findById(eventId);
     if (!event)
@@ -52,34 +48,21 @@ const submitCheckin = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Event not found" });
 
-    let imageUrl = null;
-    if (req.file) {
-      const streamUpload = () => {
-        return new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            { folder: "profile_images", resource_type: "image" },
-            (error, result) => {
-              if (result) {
-                resolve(result);
-              } else {
-                reject(error);
-              }
-            }
-          );
-          streamifier.createReadStream(req.file.buffer).pipe(stream);
-        });
-      };
-
-      const result = await streamUpload();
-      imageUrl = result.secure_url;
-    }
+    // upload selfie
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "attendance_checkins" },
+        (err, result) => (err ? reject(err) : resolve(result))
+      );
+      streamifier.createReadStream(req.file.buffer).pipe(stream);
+    });
 
     const checkin = await AttendeeCheckin.findOneAndUpdate(
       { eventId, userId },
       {
         $push: {
           sessions: {
-            checkinSelfie: imageUrl,
+            checkinSelfie: result.secure_url,
             checkinTime: new Date(),
             checkinStatus: "pending",
           },
@@ -88,29 +71,31 @@ const submitCheckin = async (req, res) => {
       { new: true, upsert: true }
     );
 
+    // notify organizer
     await sendNotification({
       sender_id: userId,
-      receiver_id: event.organizer_id._id,
+      receiver_id: event.organizer_id,
       event_id: eventId,
-      type: "event",
+      type: "checkin",
       title: "New Check-in Request",
-      message: `${decoded.name || "An attendee"} has checked in for "${
+      message: `${decoded.name || "An attendee"} has checked in for “${
         event.eventName
-      }" and is waiting for your approval.`,
+      }” and is awaiting approval.`,
     });
 
+    // notify user
     await sendNotification({
-      sender_id: event.organizer_id._id,
+      sender_id: event.organizer_id,
       receiver_id: userId,
       event_id: eventId,
-      type: "event",
+      type: "checkin",
       title: "Check-in Submitted",
-      message: `Your check-in for "${event.eventName}" has been submitted and is waiting for organizer approval.`,
+      message: `Your check-in for “${event.eventName}” has been submitted for approval.`,
     });
 
     res.status(201).json({
       success: true,
-      message: "Check-in submitted, waiting for organizer approval",
+      message: "Check-in submitted successfully",
       checkin,
     });
   } catch (err) {
@@ -119,92 +104,75 @@ const submitCheckin = async (req, res) => {
   }
 };
 
+/* =============== CHECK-OUT =============== */
 const submitCheckout = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded._id;
-
     const { eventId } = req.body;
-    if (!eventId || !req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "eventId & checkoutSelfie are required",
-      });
-    }
 
-    // Upload image to Cloudinary
-    let imageUrl = null;
-    if (req.file) {
-      const streamUpload = () => {
-        return new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            { folder: "profile_images", resource_type: "image" },
-            (error, result) => {
-              if (result) resolve(result);
-              else reject(error);
-            }
-          );
-          streamifier.createReadStream(req.file.buffer).pipe(stream);
-        });
-      };
-      const result = await streamUpload();
-      imageUrl = result.secure_url;
-    }
+    if (!eventId || !req.file)
+      return res
+        .status(400)
+        .json({ success: false, message: "eventId & selfie required" });
 
-    // Find the last open session manually
     const record = await AttendeeCheckin.findOne({ eventId, userId });
-    if (!record || record.sessions.length === 0) {
+    if (!record || !record.sessions.length)
       return res.status(400).json({
         success: false,
         message: "You must check-in before check-out",
       });
-    }
 
-    const lastSession = record.sessions[record.sessions.length - 1];
-    if (lastSession.checkoutTime) {
+    const last = record.sessions[record.sessions.length - 1];
+    if (last.checkoutTime)
+      return res
+        .status(400)
+        .json({ success: false, message: "No active check-in to checkout" });
+    if (last.checkinStatus !== "approved")
       return res.status(400).json({
         success: false,
-        message: "No active check-in found to checkout",
+        message: "Check-in must be approved before checking out",
       });
-    }
 
-    // Update last session
-    lastSession.checkoutSelfie = imageUrl;
-    lastSession.checkoutTime = new Date();
-    lastSession.checkoutStatus = "pending";
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "attendance_checkouts" },
+        (err, result) => (err ? reject(err) : resolve(result))
+      );
+      streamifier.createReadStream(req.file.buffer).pipe(stream);
+    });
 
+    last.checkoutSelfie = result.secure_url;
+    last.checkoutTime = new Date();
+    last.checkoutStatus = "pending";
     await record.save();
 
-    const event = await Event.findById(eventId).populate(
-      "organizer_id",
-      "_id name"
-    );
+    const event = await Event.findById(eventId);
 
     await sendNotification({
       sender_id: userId,
-      receiver_id: event.organizer_id._id,
+      receiver_id: event.organizer_id,
       event_id: eventId,
-      type: "event",
+      type: "checkout",
       title: "New Check-out Request",
-      message: `${decoded.name || "An attendee"} has checked out for "${
+      message: `${decoded.name || "An attendee"} has checked out for “${
         event.eventName
-      }" and is waiting for your approval.`,
+      }” awaiting your approval.`,
     });
 
-    // To Seeker
     await sendNotification({
-      sender_id: event.organizer_id._id,
+      sender_id: event.organizer_id,
       receiver_id: userId,
       event_id: eventId,
-      type: "event",
+      type: "checkout",
       title: "Check-out Submitted",
-      message: `Your check-out for "${event.eventName}" has been submitted and is waiting for organizer approval.`,
+      message: `Your check-out for “${event.eventName}” has been submitted for approval.`,
     });
 
     res.status(201).json({
       success: true,
-      message: "Check-out submitted, waiting for organizer approval",
+      message: "Check-out submitted successfully",
       attendee: record,
     });
   } catch (err) {
@@ -213,40 +181,31 @@ const submitCheckout = async (req, res) => {
   }
 };
 
+/* =============== GET MY STATUS =============== */
 const getMyAttendanceStatus = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded._id;
-
     const { eventId } = req.body;
-    if (!eventId) {
-      return res.status(400).json({
-        success: false,
-        message: "eventId is required",
-      });
-    }
 
-    const record = await AttendeeCheckin.findOne({ eventId, userId });
-    if (!record || record.sessions.length === 0) {
+    const record = await AttendeeCheckin.findOne({
+      eventId,
+      userId: decoded._id,
+    });
+    if (!record || !record.sessions.length)
       return res
         .status(404)
         .json({ success: false, message: "No attendance found" });
-    }
 
-    const lastSession = record.sessions[record.sessions.length - 1];
-
+    const last = record.sessions[record.sessions.length - 1];
     res.status(200).json({
       success: true,
       attendance: {
-        checkinStatus: lastSession.checkinStatus,
-        checkinTime: formatDateTime(lastSession.checkinTime),
-        checkoutStatus: lastSession.checkoutStatus,
-        checkoutTime: formatDateTime(lastSession.checkoutTime),
-        duration: calculateDuration(
-          lastSession.checkinTime,
-          lastSession.checkoutTime
-        ),
+        checkinStatus: last.checkinStatus,
+        checkinTime: formatDateTime(last.checkinTime),
+        checkoutStatus: last.checkoutStatus,
+        checkoutTime: formatDateTime(last.checkoutTime),
+        duration: calculateDuration(last.checkinTime, last.checkoutTime),
       },
     });
   } catch (err) {
@@ -255,22 +214,23 @@ const getMyAttendanceStatus = async (req, res) => {
   }
 };
 
+/* =============== ORGANIZER: PENDING LIST =============== */
 const getPendingAttendance = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
     const organizerId = decoded._id;
-
-    const user = await UserAuth.findById(organizerId);
-    if (!user || user.role !== "organizer") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Only organizers allowed" });
-    }
-
     const { eventId } = req.body;
 
-    // Get all attendance records and populate user basic details
+    const event = await Event.findOne({
+      _id: eventId,
+      organizer_id: organizerId,
+    });
+    if (!event)
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized event access" });
+
     const records = await AttendeeCheckin.find({ eventId }).populate(
       "userId",
       "name email"
@@ -278,12 +238,10 @@ const getPendingAttendance = async (req, res) => {
 
     const pending = [];
     for (const r of records) {
-      // Fetch user profile to get profile_img
       const profile = await UserProfile.findOne({
         userId: r.userId._id,
       }).select("profile_img");
-
-      r.sessions.forEach((s) => {
+      for (const s of r.sessions) {
         if (s.checkinStatus === "pending" || s.checkoutStatus === "pending") {
           pending.push({
             recordId: r._id,
@@ -291,87 +249,55 @@ const getPendingAttendance = async (req, res) => {
               _id: r.userId._id,
               name: r.userId.name,
               email: r.userId.email,
-              profile_img: profile?.profile_img || null, // ✅ added here
+              profile_img: profile?.profile_img || null,
             },
             sessionId: s._id,
             checkinTime: formatDateTime(s.checkinTime),
             checkoutTime: formatDateTime(s.checkoutTime),
+            checkinSelfie: s.checkinSelfie,
+            checkoutSelfie: s.checkoutSelfie,
             checkinStatus: s.checkinStatus,
             checkoutStatus: s.checkoutStatus,
-            checkinSelfie: s.checkinSelfie || null,
-            checkoutSelfie: s.checkoutSelfie || null,
             duration: calculateDuration(s.checkinTime, s.checkoutTime),
           });
         }
-      });
+      }
     }
 
-    res.status(200).json({
-      success: true,
-      records: pending,
-    });
+    res.status(200).json({ success: true, records: pending });
   } catch (err) {
     console.error("Get Pending Attendance Error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
+/* =============== APPROVE / REJECT =============== */
 const updateAttendanceStatus = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
-    const organizerId = decoded._id;
-
-    const user = await UserAuth.findById(organizerId);
-    if (!user || user.role !== "organizer") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Only organizers allowed" });
-    }
-
     const { recordId, sessionId, type, status } = req.body;
-    if (!["approved", "rejected"].includes(status)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Status must be approved/rejected" });
-    }
-
-    let updateField = {};
-    if (type === "checkin") updateField["sessions.$.checkinStatus"] = status;
-    else if (type === "checkout")
-      updateField["sessions.$.checkoutStatus"] = status;
-    else
-      return res.status(400).json({ success: false, message: "Invalid type" });
 
     const record = await AttendeeCheckin.findOneAndUpdate(
       { _id: recordId, "sessions._id": sessionId },
-      { $set: updateField },
+      { $set: { [`sessions.$.${type}Status`]: status } },
       { new: true }
     ).populate("userId", "name email");
 
-    if (!record) {
+    if (!record)
       return res
         .status(404)
-        .json({ success: false, message: "Attendance record not found" });
-    }
+        .json({ success: false, message: "Record not found" });
 
-    const event = await Event.findById(record.eventId).select("eventName");
+    const event = await Event.findById(record.eventId);
+
     await sendNotification({
-      sender_id: organizerId,
+      sender_id: decoded._id,
       receiver_id: record.userId._id,
-      event_id: record.eventId,
-      type: "event",
+      event_id: event._id,
+      type: "attendance",
       title: "Attendance Update",
-      message: `Your ${type} for "${event.eventName}" has been ${status}.`,
-    });
-
-    await sendNotification({
-      sender_id: record.userId._id,
-      receiver_id: organizerId,
-      event_id: record.eventId,
-      type: "event",
-      title: "Attendance Action Recorded",
-      message: `You have ${status} the ${type} request of ${record.userId.name} for "${event.eventName}".`,
+      message: `Your ${type} for “${event.eventName}” was ${status}.`,
     });
 
     res.status(200).json({
@@ -385,41 +311,24 @@ const updateAttendanceStatus = async (req, res) => {
   }
 };
 
+/* =============== SEEKER: ACCEPTED EVENTS =============== */
 const getAcceptedEventList = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
-    if (!token) {
-      return res
-        .status(401)
-        .json({ success: false, message: "No token provided" });
-    }
-
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded._id;
-
-    // Find accepted applications
     const applications = await EventApplication.find({
-      seeker_id: userId,
+      seeker_id: decoded._id,
       applicationStatus: "accepted",
     }).populate("event_id", "eventName location eventStatus");
 
-    if (!applications || applications.length === 0) {
-      return res.status(200).json({
-        success: false,
-        message: "No accepted events found",
-      });
-    }
-
     res.status(200).json({
       success: true,
-      events: applications.map((app) => ({
-        event_id: app.event_id?._id,
-        seeker_id: app.seeker_id,
-        eventName: app.event_id?.eventName,
-        location: app.event_id?.location,
-        applicationStatus: app.applicationStatus,
-        appliedAt: formatDateTime(app.appliedAt),
-        eventStatus: app.event_id?.eventStatus,
+      events: applications.map((a) => ({
+        event_id: a.event_id?._id,
+        eventName: a.event_id?.eventName,
+        location: a.event_id?.location,
+        eventStatus: a.event_id?.eventStatus,
+        appliedAt: a.appliedAt,
       })),
     });
   } catch (err) {
@@ -428,35 +337,28 @@ const getAcceptedEventList = async (req, res) => {
   }
 };
 
+/* =============== SEEKER: MY TIMESHEET =============== */
 const getMyTimesheet = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded._id;
-
     const { eventId } = req.body;
-    if (!eventId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "eventId is required" });
-    }
 
-    const record = await AttendeeCheckin.findOne({ eventId, userId });
-    if (!record || record.sessions.length === 0) {
+    const record = await AttendeeCheckin.findOne({
+      eventId,
+      userId: decoded._id,
+    });
+    if (!record)
       return res
         .status(404)
         .json({ success: false, message: "No attendance found" });
-    }
 
-    // Build timesheet list with statuses
     const timesheet = record.sessions.map((s) => ({
-      clock_in: s.checkinTime,
-      clock_out: s.checkoutTime || null,
-      checkin_status: s.checkinStatus,
-      checkout_status: s.checkoutStatus,
-      checkin_selfie: s.checkinSelfie || null,
-      checkout_selfie: s.checkoutSelfie || null,
-      total_hours:
+      checkinTime: formatDateTime(s.checkinTime),
+      checkoutTime: formatDateTime(s.checkoutTime),
+      checkinStatus: s.checkinStatus,
+      checkoutStatus: s.checkoutStatus,
+      totalHours:
         s.checkinTime && s.checkoutTime
           ? (
               (new Date(s.checkoutTime) - new Date(s.checkinTime)) /
@@ -465,15 +367,12 @@ const getMyTimesheet = async (req, res) => {
           : "0.00",
     }));
 
-    const lastSession = record.sessions[record.sessions.length - 1];
-    const status = lastSession.checkoutTime ? "checkout" : "checkin";
-
     res.status(200).json({
-      status,
+      success: true,
       timesheet,
     });
   } catch (err) {
-    console.error("Get Attendance Timesheet Error:", err);
+    console.error("Get My Timesheet Error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
