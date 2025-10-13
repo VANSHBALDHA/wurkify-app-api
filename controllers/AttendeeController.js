@@ -338,6 +338,7 @@ const getAcceptedEventList = async (req, res) => {
 };
 
 /* =============== SEEKER: MY TIMESHEET =============== */
+/* =============== SEEKER: MY TIMESHEET =============== */
 const getMyTimesheet = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -348,6 +349,7 @@ const getMyTimesheet = async (req, res) => {
       eventId,
       userId: decoded._id,
     });
+
     if (!record)
       return res
         .status(404)
@@ -358,6 +360,8 @@ const getMyTimesheet = async (req, res) => {
       checkoutTime: formatDateTime(s.checkoutTime),
       checkinStatus: s.checkinStatus,
       checkoutStatus: s.checkoutStatus,
+      checkinSelfie: s.checkinSelfie || null,
+      checkoutSelfie: s.checkoutSelfie || null,
       totalHours:
         s.checkinTime && s.checkoutTime
           ? (
