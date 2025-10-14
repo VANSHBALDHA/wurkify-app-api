@@ -4,8 +4,25 @@ const EventApplication = require("../models/EventApplication");
 const UserAuth = require("../models/AuthUsers");
 const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
-const axios = require("axios");
+const Razorpay = require("razorpay");
 const { sendNotification } = require("../middlewares/notificationService");
+const { default: axios } = require("axios");
+
+const instance = new Razorpay({
+  key_id: "rzp_live_RQErm1QXjwLHM9",
+  key_secret: "WjywpnGqjiMdvLPYhUnjQHTT",
+});
+
+const RAZORPAY_KEY_ID =
+  process.env.RAZORPAY_KEY_ID || "rzp_live_RQErm1QXjwLHM9";
+const RAZORPAY_KEY_SECRET =
+  process.env.RAZORPAY_KEY_SECRET || "WjywpnGqjiMdvLPYhUnjQHTT";
+const RAZORPAY_ACCOUNT_NUMBER =
+  process.env.RAZORPAY_ACCOUNT_NUMBER || "300004000017531";
+
+const isTestMode =
+  RAZORPAY_KEY_ID.startsWith("rzp_test_") ||
+  process.env.NODE_ENV !== "production";
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -124,14 +141,35 @@ const releasePaymentToSeeker = async (req, res) => {
  */
 const getWalletDetails = async (req, res) => {
   try {
-    const { seekerId } = req.body;
-    if (!seekerId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Seeker ID required" });
+    // const { seekerId } = req.body;
+    // if (!seekerId) {
+    //   return res
+    //     .status(400)
+    //     .json({ success: false, message: "Seeker ID required" });
+    // }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization token missing or invalid",
+      });
     }
 
-    const wallet = await Wallet.findOne({ seeker_id: seekerId }).populate(
+    const token = authHeader.split(" ")[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired token",
+      });
+    }
+
+    const userId = decoded._id;
+
+    const wallet = await Wallet.findOne({ seeker_id: userId }).populate(
       "transactions.event_id",
       "eventName location"
     );
@@ -421,14 +459,13 @@ const getSeekerEarnings = async (req, res) => {
   }
 };
 
-/**
- * ✅ Seeker: Withdraw earnings from wallet
- */
 const withdrawSeekerEarnings = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
@@ -436,75 +473,149 @@ const withdrawSeekerEarnings = async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const seekerId = decoded._id;
 
+    console.log("🔐 Withdrawal request by seeker:", seekerId);
+
     const { amount, upiId } = req.body;
 
     if (!amount || amount <= 0) {
+      await session.abortTransaction();
       return res
         .status(400)
         .json({ success: false, message: "Invalid withdrawal amount" });
     }
 
     if (!upiId) {
+      await session.abortTransaction();
       return res
         .status(400)
         .json({ success: false, message: "UPI ID is required" });
     }
 
-    // Fetch wallet
-    const wallet = await Wallet.findOne({ seeker_id: seekerId });
-    if (!wallet || wallet.balance < amount) {
-      return res.status(400).json({
-        success: false,
-        message: "Insufficient wallet balance",
-      });
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,49}@[a-zA-Z]{2,}$/;
+    if (!upiRegex.test(upiId)) {
+      await session.abortTransaction();
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid UPI ID format" });
     }
 
-    // ✅ Call RazorpayX Payout API
-    const response = await axios.post(
-      "https://api.razorpay.com/v1/payouts",
-      {
-        account_number: process.env.RAZORPAYX_ACCOUNT_NO,
-        fund_account: {
+    const user = await UserAuth.findById(seekerId).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const wallet = await Wallet.findOne({ seeker_id: seekerId }).session(
+      session
+    );
+    if (!wallet || wallet.balance < amount) {
+      await session.abortTransaction();
+      return res
+        .status(400)
+        .json({ success: false, message: "Insufficient wallet balance" });
+    }
+
+    if (amount < 1) {
+      await session.abortTransaction();
+      return res
+        .status(400)
+        .json({ success: false, message: "Minimum withdrawal amount is ₹1" });
+    }
+
+    let payout;
+    if (isTestMode) {
+      // 🧪 Simulation Mode (no actual payout)
+      payout = {
+        id: `sim_payout_${Date.now()}`,
+        status: "processing",
+        amount,
+        mode: "UPI",
+        description: "Simulated payout in test mode",
+      };
+
+      console.log("⚙️ Simulated payout:", payout);
+    } else {
+      // ✅ Live RazorpayX Payout Flow
+      console.log("🔗 Creating real RazorpayX payout...");
+
+      // Step 1: Create Contact
+      const contact = await axios.post(
+        "https://api.razorpay.com/v1/contacts",
+        {
+          name: user.name || "Seeker User",
+          email: user.email || "noreply@example.com",
+          contact: user.phone || "9106792692",
+          type: "customer",
+        },
+        { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+      );
+
+      // Step 2: Create Fund Account
+      const fundAccount = await axios.post(
+        "https://api.razorpay.com/v1/fund_accounts",
+        {
+          contact_id: contact.data.id,
           account_type: "vpa",
           vpa: { address: upiId },
         },
-        amount: amount * 100,
-        currency: "INR",
-        mode: "UPI",
-        purpose: "payout",
-        narration: "Seeker Wallet Withdrawal",
-      },
-      {
-        auth: {
-          username: process.env.RAZORPAY_KEY_ID,
-          password: process.env.RAZORPAY_KEY_SECRET,
+        { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+      );
+
+      // Step 3: Create Payout
+      const payoutRes = await axios.post(
+        "https://api.razorpay.com/v1/payouts",
+        {
+          account_number: RAZORPAY_ACCOUNT_NUMBER,
+          fund_account_id: fundAccount.data.id,
+          amount: amount * 100,
+          currency: "INR",
+          mode: "UPI",
+          purpose: "payout",
+          queue_if_low_balance: true,
+          narration: "Seeker Wallet Withdrawal",
         },
-      }
-    );
+        { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+      );
 
-    const payout = response.data;
+      payout = payoutRes.data;
+      console.log("✅ RazorpayX payout created:", payout.id);
+    }
 
-    // ✅ Deduct from wallet and save
+    // 💰 Update wallet after payout
     wallet.balance -= amount;
     wallet.transactions.push({
       type: "debit",
       amount,
-      description: `Withdrawal via Razorpay (Payout ID: ${payout.id})`,
+      description: `Withdrawal via RazorpayX (Payout ID: ${payout.id})`,
       date: new Date(),
+      status: payout.status || "processing",
+      payout_id: payout.id,
+      upi_id: upiId,
     });
-    await wallet.save();
+
+    await wallet.save({ session });
+    await session.commitTransaction();
 
     return res.status(200).json({
       success: true,
-      message: "Withdrawal successful via Razorpay",
-      payout,
+      message: isTestMode
+        ? "Simulated withdrawal (test mode)"
+        : "Withdrawal initiated successfully",
+      payoutId: payout.id,
       walletBalance: wallet.balance,
+      mode: isTestMode ? "simulation" : "live",
     });
   } catch (err) {
+    await session.abortTransaction();
     console.error("Withdraw Error:", err.response?.data || err.message);
-    return res
-      .status(500)
-      .json({ success: false, message: "Withdrawal failed" });
+    return res.status(500).json({
+      success: false,
+      message: err.response?.data?.error?.description || err.message,
+    });
+  } finally {
+    session.endSession();
   }
 };
 
