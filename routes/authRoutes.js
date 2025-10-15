@@ -13,6 +13,7 @@ const {
   deleteAccount,
   resetOtp,
   changePin,
+  googleLogin,
 } = require("../controllers/AuthController");
 
 router.post("/register", upload.none(), registerUser);
@@ -24,5 +25,6 @@ router.post("/reset-password", upload.none(), resetPassword);
 router.delete("/delete-account", upload.none(), deleteAccount);
 router.post("/change-password", upload.none(), changePin);
 router.post("/reset-otp", upload.none(), resetOtp);
+router.post("/google-login", upload.none(), googleLogin);
 
 module.exports = router;

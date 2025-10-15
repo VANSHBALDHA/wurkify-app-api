@@ -7,7 +7,9 @@ const moment = require("moment");
 const jwt = require("jsonwebtoken");
 const UserProfile = require("../models/UserProfile");
 const { OAuth2Client } = require("google-auth-library");
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const client = new OAuth2Client(
+  "45252786035-tf227gkdbofsumhmp561n75o7vsj8gpe.apps.googleusercontent.com"
+);
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 const JWT_EXPIRES_IN = "7d";
@@ -561,6 +563,122 @@ const resetOtp = async (req, res) => {
   }
 };
 
+// ---------------- GOOGLE LOGIN ------------------
+
+const googleLogin = async (req, res) => {
+  try {
+    const { token, fcm_token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: "Google token is required",
+      });
+    }
+
+    // Verify the token with Google
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience:
+        "45252786035-tf227gkdbofsumhmp561n75o7vsj8gpe.apps.googleusercontent.com",
+    });
+
+    const payload = ticket.getPayload();
+    const { email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email not found in Google account",
+      });
+    }
+
+    // Check if user already exists
+    let user = await UserAuth.findOne({ email });
+
+    if (!user) {
+      // Create a new user
+      user = await UserAuth.create({
+        name: name || "Google User",
+        email,
+        password: null,
+        isVerified: true,
+        role: "seeker",
+        provider: "google",
+      });
+
+      // Create user profile if not exists
+      await UserProfile.create({
+        userId: user._id,
+        profile_img: picture || null,
+        fcm_token: fcm_token || null,
+      });
+    } else {
+      // Update FCM token and image if needed
+      await UserProfile.findOneAndUpdate(
+        { userId: user._id },
+        { fcm_token: fcm_token || null, profile_img: picture || undefined },
+        { upsert: true, new: true }
+      );
+    }
+
+    // Generate JWT token
+    const jwtToken = jwt.sign(
+      {
+        _id: user._id.toString(),
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+        name: user.name,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    user.token = jwtToken;
+    await user.save();
+
+    const userProfile = await UserProfile.findOne({ userId: user._id });
+
+    // return res.status(200).json({
+    //   success: true,
+    //   message: "Google login successful",
+    //   token: jwtToken,
+    //   user: {
+    //     _id: user._id,
+    //     name: user.name,
+    //     email: user.email,
+    //     role: user.role,
+    //     profile_img: userProfile?.profile_img || null,
+    //     fcm_token: userProfile?.fcm_token || null,
+    //   },
+    // });
+
+    res.status(200).json({
+      success: true,
+      message: "Google login successful",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        birthdate: user.birthdate,
+        gender: user.gender,
+        fcm_token: userProfile?.fcm_token || null,
+        profile_img: userProfile?.profile_img || null,
+      },
+    });
+  } catch (err) {
+    console.error("Google Login Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Google login failed",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   verifyOtp,
@@ -571,4 +689,5 @@ module.exports = {
   resetPassword,
   deleteAccount,
   changePin,
+  googleLogin,
 };
