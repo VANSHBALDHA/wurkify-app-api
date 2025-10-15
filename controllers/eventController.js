@@ -496,7 +496,9 @@ const createEvent = async (req, res) => {
         (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24)
       ),
       ...(mapLink && { mapLink }),
-      ...(typeOfPeople && { typeOfPeople }),
+      ...(Array.isArray(typeOfPeople) && typeOfPeople.length > 0
+        ? { typeOfPeople }
+        : {}),
     };
 
     if (eventData.dressCode) {
@@ -655,7 +657,9 @@ const editEvent = async (req, res) => {
       additionalNotes,
       eventStatus: "pending",
       ...(mapLink && { mapLink }), // ✅ Optional update
-      ...(typeOfPeople && { typeOfPeople }),
+      ...(Array.isArray(typeOfPeople) && typeOfPeople.length > 0
+        ? { typeOfPeople }
+        : {}),
     };
 
     if (updateData.dressCode) {

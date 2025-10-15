@@ -99,9 +99,9 @@ const eventSchema = new mongoose.Schema({
     default: null, // Optional
   },
   typeOfPeople: {
-    type: String,
+    type: [String],
     enum: ["Male", "Female", "Both"],
-    default: "Both",
+    default: ["Both"],
   },
   createdAt: {
     type: Date,
