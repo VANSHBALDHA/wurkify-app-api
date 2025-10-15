@@ -8,7 +8,7 @@ const jwt = require("jsonwebtoken");
 const UserProfile = require("../models/UserProfile");
 const { OAuth2Client } = require("google-auth-library");
 const client = new OAuth2Client(
-  "45252786035-tf227gkdbofsumhmp561n75o7vsj8gpe.apps.googleusercontent.com"
+  "798615821578-fg6qso838l7avqala90hj1fe9acd3jqv.apps.googleusercontent.com"
 );
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
@@ -580,7 +580,7 @@ const googleLogin = async (req, res) => {
     const ticket = await client.verifyIdToken({
       idToken: token,
       audience:
-        "45252786035-6js1am1vbetsq4ruaksr9fuv3lr26slf.apps.googleusercontent.com",
+        "798615821578-fg6qso838l7avqala90hj1fe9acd3jqv.apps.googleusercontent.com",
     });
 
     const payload = ticket.getPayload();
