@@ -576,11 +576,11 @@ const googleLogin = async (req, res) => {
       });
     }
 
-    // Verify the token with Google
+    // Verify Google ID Token
     const ticket = await client.verifyIdToken({
       idToken: token,
       audience:
-        "45252786035-tf227gkdbofsumhmp561n75o7vsj8gpe.apps.googleusercontent.com",
+        "45252786035-5527pe8vvgpa8djrgvcmn1sjlu688v31.apps.googleusercontent.com",
     });
 
     const payload = ticket.getPayload();
@@ -593,34 +593,24 @@ const googleLogin = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    let user = await UserAuth.findOne({ email });
+    // Check if user exists
+    const user = await UserAuth.findOne({ email });
 
     if (!user) {
-      // Create a new user
-      user = await UserAuth.create({
-        name: name || "Google User",
-        email,
-        password: null,
-        isVerified: true,
-        role: "seeker",
-        provider: "google",
+      // ❌ Do not create a new user
+      return res.status(404).json({
+        success: false,
+        message:
+          "No account found for this Google email. Please register first.",
       });
-
-      // Create user profile if not exists
-      await UserProfile.create({
-        userId: user._id,
-        profile_img: picture || null,
-        fcm_token: fcm_token || null,
-      });
-    } else {
-      // Update FCM token and image if needed
-      await UserProfile.findOneAndUpdate(
-        { userId: user._id },
-        { fcm_token: fcm_token || null, profile_img: picture || undefined },
-        { upsert: true, new: true }
-      );
     }
+
+    // Update FCM token and profile image if provided
+    await UserProfile.findOneAndUpdate(
+      { userId: user._id },
+      { fcm_token: fcm_token || null, profile_img: picture || undefined },
+      { upsert: true, new: true }
+    );
 
     // Generate JWT token
     const jwtToken = jwt.sign(
@@ -640,24 +630,10 @@ const googleLogin = async (req, res) => {
 
     const userProfile = await UserProfile.findOne({ userId: user._id });
 
-    // return res.status(200).json({
-    //   success: true,
-    //   message: "Google login successful",
-    //   token: jwtToken,
-    //   user: {
-    //     _id: user._id,
-    //     name: user.name,
-    //     email: user.email,
-    //     role: user.role,
-    //     profile_img: userProfile?.profile_img || null,
-    //     fcm_token: userProfile?.fcm_token || null,
-    //   },
-    // });
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Google login successful",
-      token,
+      token: jwtToken,
       user: {
         _id: user._id,
         name: user.name,
