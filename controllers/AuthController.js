@@ -586,6 +586,8 @@ const googleLogin = async (req, res) => {
     const payload = ticket.getPayload();
     const { email, name, picture } = payload;
 
+    console.log("Google Payload:", payload);
+
     if (!email) {
       return res.status(400).json({
         success: false,
@@ -597,11 +599,9 @@ const googleLogin = async (req, res) => {
     const user = await UserAuth.findOne({ email });
 
     if (!user) {
-      // ❌ Do not create a new user
       return res.status(404).json({
         success: false,
-        message:
-          "No account found for this Google email. Please register first.",
+        message: `We couldn’t find the email ${email} in our records. Please register first.`,
       });
     }
 
