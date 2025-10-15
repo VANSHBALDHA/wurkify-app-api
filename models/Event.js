@@ -92,6 +92,17 @@ const eventSchema = new mongoose.Schema({
     enum: ["pending", "completed"],
     default: "pending",
   },
+  mapLink: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: null, // Optional
+  },
+  typeOfPeople: {
+    type: String,
+    enum: ["Male", "Female", "Both"],
+    default: "Both",
+  },
   createdAt: {
     type: Date,
     default: Date.now,

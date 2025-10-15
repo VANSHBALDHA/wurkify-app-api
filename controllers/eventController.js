@@ -134,6 +134,8 @@ const getEventList = async (req, res) => {
               : null,
             createdAt: event.createdAt,
             appliedCount: appCountMap.get(event._id.toString()) || 0,
+            mapLink: event.mapLink || null,
+            typeOfPeople: event.typeOfPeople,
           };
         })
       );
@@ -339,6 +341,8 @@ const getEventById = async (req, res) => {
         organizer_name: event.organizer_name,
         createdAt: event.createdAt,
         alreadyApplied,
+        mapLink: event.mapLink || null,
+        typeOfPeople: event.typeOfPeople,
       },
     });
   } catch (err) {
@@ -364,6 +368,8 @@ const createEvent = async (req, res) => {
       location,
       requiredMemberCount,
       additionalNotes,
+      mapLink,
+      typeOfPeople,
     } = req.body;
 
     const authHeader = req.headers.authorization;
@@ -489,6 +495,8 @@ const createEvent = async (req, res) => {
       numberOfDays: Math.floor(
         (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24)
       ),
+      ...(mapLink && { mapLink }),
+      ...(typeOfPeople && { typeOfPeople }),
     };
 
     if (eventData.dressCode) {
@@ -533,6 +541,8 @@ const editEvent = async (req, res) => {
       location,
       requiredMemberCount,
       additionalNotes,
+      mapLink, // ✅
+      typeOfPeople, // ✅
     } = req.body;
 
     // ✅ Authorization
@@ -644,6 +654,8 @@ const editEvent = async (req, res) => {
       requiredMemberCount,
       additionalNotes,
       eventStatus: "pending",
+      ...(mapLink && { mapLink }), // ✅ Optional update
+      ...(typeOfPeople && { typeOfPeople }),
     };
 
     if (updateData.dressCode) {
