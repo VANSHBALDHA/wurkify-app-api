@@ -92,7 +92,14 @@ const getProfileDetails = async (req, res) => {
           facebook: "",
           linkedin: "",
         },
-        documentation: profile?.documentation || null,
+        documentation: profile?.documentation
+          ? {
+              aadharNumber: profile.documentation.aadharNumber || "",
+              panNumber: profile.documentation.panNumber || "",
+              aadharImage: profile.documentation.aadharImage || "",
+              panImage: profile.documentation.panImage || "",
+            }
+          : null,
         bankDetails: profile?.bankDetails || null,
         workExperience: profile?.workExperience || [],
       },
@@ -252,7 +259,9 @@ const upsertProfile = async (req, res) => {
       ...(city && { city }),
       ...(height && { height }),
       ...(parsedSkills.length && { skills: parsedSkills }),
-      ...(Object.keys(parsedEducation).length && { education: parsedEducation }),
+      ...(Object.keys(parsedEducation).length && {
+        education: parsedEducation,
+      }),
       ...(address && { address }),
       photos: finalPhotos,
     };
@@ -273,7 +282,6 @@ const upsertProfile = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 
 const updateSocialLinks = async (req, res) => {
   try {
