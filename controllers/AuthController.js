@@ -580,7 +580,7 @@ const googleLogin = async (req, res) => {
     const ticket = await client.verifyIdToken({
       idToken: token,
       audience:
-        "45252786035-5527pe8vvgpa8djrgvcmn1sjlu688v31.apps.googleusercontent.com",
+        "45252786035-6js1am1vbetsq4ruaksr9fuv3lr26slf.apps.googleusercontent.com",
     });
 
     const payload = ticket.getPayload();
