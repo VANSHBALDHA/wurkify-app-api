@@ -7,7 +7,6 @@ const referralSchema = new mongoose.Schema(
       ref: "UserAuth",
       required: true,
     },
-    // 🧾 Keep referred user's email (not ID)
     referredEmail: {
       type: String,
       required: true,
