@@ -76,15 +76,14 @@ const getReferralSummary = async (req, res) => {
         referredBy: user.referredBy || null,
         totalReferrals,
         totalEarned,
-        referredBonus,
         totalAvailable,
         minWithdrawal,
         isEligibleForWithdrawal,
         referrals: referralsMade.map((r) => ({
+          referredEmail: r.referredEmail,
           referrerBonus: r.referrerBonus,
           referredBonus: r.referredBonus,
           status: r.status,
-          createdAt: r.createdAt,
         })),
       },
     });

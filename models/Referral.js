@@ -7,22 +7,24 @@ const referralSchema = new mongoose.Schema(
       ref: "UserAuth",
       required: true,
     },
-    referredUserId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "UserAuth",
+    // 🧾 Keep referred user's email (not ID)
+    referredEmail: {
+      type: String,
       required: true,
+      lowercase: true,
+      trim: true,
     },
     referrerBonus: {
       type: Number,
-      default: 50,
+      default: 50, // ₹50 for referrer
     },
     referredBonus: {
       type: Number,
-      default: 25,
+      default: 25, // ₹25 for referred user
     },
     referrerPaid: {
       type: Boolean,
-      default: false,
+      default: false, // mark true after withdrawal
     },
     referredPaid: {
       type: Boolean,
@@ -34,11 +36,8 @@ const referralSchema = new mongoose.Schema(
       default: "approved",
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 const Referral = mongoose.model("Referral", referralSchema);
-
 module.exports = Referral;

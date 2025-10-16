@@ -272,7 +272,6 @@ const verifyOtp = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Email verified successfully",
-      referralCode: user.referralCode,
     });
   } catch (err) {
     console.error("Verify OTP Error:", err);
