@@ -7,6 +7,8 @@ const moment = require("moment");
 const jwt = require("jsonwebtoken");
 const UserProfile = require("../models/UserProfile");
 const { OAuth2Client } = require("google-auth-library");
+const Referral = require("../models/Referral");
+const generateReferralCode = require("../utils/generateReferralCode");
 const client = new OAuth2Client(
   "798615821578-fg6qso838l7avqala90hj1fe9acd3jqv.apps.googleusercontent.com"
 );
@@ -87,7 +89,16 @@ const sendResetOtpEmail = async (to, otp) => {
 
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password, phone, birthdate, gender, role } = req.body;
+    const {
+      name,
+      email,
+      password,
+      phone,
+      birthdate,
+      gender,
+      role,
+      referralCode,
+    } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -166,6 +177,7 @@ const registerUser = async (req, res) => {
       birthdate: parsedBirthdate,
       gender: gender || null,
       role: role || "seeker",
+      referredBy: referralCode || null,
       isVerified: false,
     });
 
@@ -231,11 +243,36 @@ const verifyOtp = async (req, res) => {
 
     await UserAuth.updateOne({ _id: user._id }, { $set: { isVerified: true } });
 
+    if (!user.referralCode) {
+      user.referralCode = generateReferralCode(user.name, user._id);
+      await user.save();
+    }
+
+    if (user.referredBy) {
+      const referrer = await UserAuth.findOne({
+        referralCode: user.referredBy,
+      });
+      if (referrer) {
+        referrer.referralsCount = (referrer.referralsCount || 0) + 1;
+        await referrer.save();
+
+        // 💸 Create referral record
+        await Referral.create({
+          referrerId: referrer._id,
+          referredEmail: user.email,
+          referrerBonus: 50,
+          referredBonus: 25,
+          status: "approved",
+        });
+      }
+    }
+
     await UserVerification.deleteMany({ userId: user._id });
 
     return res.status(200).json({
       success: true,
       message: "Email verified successfully",
+      referralCode: user.referralCode,
     });
   } catch (err) {
     console.error("Verify OTP Error:", err);

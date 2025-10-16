@@ -50,6 +50,20 @@ const userAuthSchema = new mongoose.Schema(
       default: false,
     },
     token: { type: String, default: null },
+
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    referredBy: {
+      type: String,
+      default: null,
+    },
+    referralsCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

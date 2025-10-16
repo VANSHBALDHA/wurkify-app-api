@@ -75,6 +75,9 @@ const getProfileDetails = async (req, res) => {
         profile_img: profile?.profile_img || "",
         photos: profile?.photos.length > 0 ? profile?.photos : [],
 
+        referralCode: user.referralCode || "",
+        referredBy: user.referredBy || "",
+
         age: profile?.age || null,
         city: profile?.city || null,
         state: profile?.state || null,
