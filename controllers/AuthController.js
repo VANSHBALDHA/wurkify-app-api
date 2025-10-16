@@ -259,6 +259,7 @@ const verifyOtp = async (req, res) => {
         // 💸 Create referral record
         await Referral.create({
           referrerId: referrer._id,
+          referredName: user.name || "Unknown",
           referredEmail: user.email,
           referrerBonus: 50,
           referredBonus: 25,

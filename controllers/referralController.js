@@ -4,7 +4,8 @@ const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
-const REFERRAL_APP_LINK = process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
+const REFERRAL_APP_LINK =
+  process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
 
 const getReferralSummary = async (req, res) => {
   try {
@@ -85,6 +86,7 @@ const getReferralSummary = async (req, res) => {
         minWithdrawal,
         isEligibleForWithdrawal,
         referrals: referralsMade.map((r) => ({
+          referredName: r.referredName,
           referredEmail: r.referredEmail,
           referrerBonus: r.referrerBonus,
           referredBonus: r.referredBonus,
