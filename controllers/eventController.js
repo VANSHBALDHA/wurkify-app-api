@@ -496,9 +496,7 @@ const createEvent = async (req, res) => {
         (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24)
       ),
       ...(mapLink && { mapLink }),
-      ...(Array.isArray(typeOfPeople) && typeOfPeople.length > 0
-        ? { typeOfPeople }
-        : {}),
+      ...(typeOfPeople && { typeOfPeople }),
     };
 
     if (eventData.dressCode) {
@@ -657,9 +655,7 @@ const editEvent = async (req, res) => {
       additionalNotes,
       eventStatus: "pending",
       ...(mapLink && { mapLink }), // ✅ Optional update
-      ...(Array.isArray(typeOfPeople) && typeOfPeople.length > 0
-        ? { typeOfPeople }
-        : {}),
+      ...(typeOfPeople && { typeOfPeople }),
     };
 
     if (updateData.dressCode) {
@@ -712,6 +708,8 @@ const editEvent = async (req, res) => {
         eventStatus: updatedEvent.eventStatus,
         organizer_name: updatedEvent.organizer_name,
         createdAt: updatedEvent.createdAt,
+        mapLink: updatedEvent.mapLink || null,
+        typeOfPeople: updatedEvent.typeOfPeople,
       },
     });
   } catch (err) {
