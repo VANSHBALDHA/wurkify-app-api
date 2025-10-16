@@ -160,6 +160,7 @@ app.use("/api/attendees", require("./routes/attendee"));
 app.use("/api/messages", require("./routes/messageRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api", require("./routes/usersearch"));
+app.use("/api/referral", require("./routes/referralRoutes"));
 
 app.use(cookieParser());
 app.use(errorMiddleware);

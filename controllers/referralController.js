@@ -6,7 +6,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
 const getReferralSummary = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { userId } = req.body;
 
     if (!userId) {
       return res.status(400).json({
