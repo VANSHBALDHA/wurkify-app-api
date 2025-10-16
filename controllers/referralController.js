@@ -3,7 +3,6 @@ const UserAuth = require("../models/AuthUsers");
 const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
-
 const REFERRAL_APP_LINK =
   process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
 
@@ -28,7 +27,6 @@ const getReferralSummary = async (req, res) => {
 
     const token = authHeader.split(" ")[1];
     let decoded;
-
     try {
       decoded = jwt.verify(token, JWT_SECRET);
     } catch (err) {
@@ -45,7 +43,7 @@ const getReferralSummary = async (req, res) => {
       });
     }
 
-    // ✅ Find the logged-in user
+    // ✅ Find logged-in user
     const user = await UserAuth.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -54,25 +52,71 @@ const getReferralSummary = async (req, res) => {
       });
     }
 
-    // ✅ Find all referrals where user is the referrer
+    // ✅ Referrals made by this user
     const referralsMade = await Referral.find({
       referrerId: userId,
       status: "approved",
     });
 
+    // ✅ Referral record where YOU were referred by someone
+    const referredRecord = await Referral.findOne({
+      referredEmail: user.email,
+      status: "approved",
+    });
+
     // ✅ Calculate totals
     const totalReferrals = referralsMade.length;
-    const totalEarned = totalReferrals * 50; // ₹50 per referral
+    const referrerBonusPerUser = 50;
+    const referredBonusAmount = referredRecord ? 25 : 0;
 
-    // ✅ If user was referred by someone, add ₹25 referred bonus
-    const referredBonus = user.referredBy && user.isVerified ? 25 : 0;
+    const earnedFromReferring = totalReferrals * referrerBonusPerUser;
+    const earnedFromBeingReferred = referredBonusAmount;
 
-    const totalAvailable = totalEarned + referredBonus;
+    const totalAvailable = earnedFromReferring + earnedFromBeingReferred;
     const minWithdrawal = 5000;
     const isEligibleForWithdrawal = totalAvailable >= minWithdrawal;
 
+    // ✅ Generate referral link
     const appLink = `${REFERRAL_APP_LINK}?ref=${user.referralCode}`;
 
+    // ✅ Combine cashback + referral bonuses in ONE array
+    const referrals = [];
+
+    // Case 1️⃣: If user was referred → add cashback entry
+    if (referredRecord) {
+      const referrerUser = await UserAuth.findById(referredRecord.referrerId);
+      referrals.push({
+        type: "cashback",
+        amount: 25,
+        referredBy: referrerUser?.name || "Friend",
+        referredCode: referrerUser?.referralCode || "N/A",
+        message: `You earned ₹25 cashback for joining using ${
+          referrerUser?.name || "a friend's"
+        } referral code.`,
+        status: "approved",
+        date: referredRecord.createdAt,
+      });
+    }
+
+    // Case 2️⃣: Add entries for users you referred
+    referralsMade.forEach((r) => {
+      referrals.push({
+        type: "referral",
+        amount: 50,
+        referredName: r.referredName || "Unknown",
+        referredEmail: r.referredEmail,
+        message: `You earned ₹50 for referring ${
+          r.referredName || r.referredEmail
+        }.`,
+        status: r.status,
+        date: r.createdAt,
+      });
+    });
+
+    // ✅ Sort newest first
+    referrals.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // ✅ Prepare final response
     res.status(200).json({
       success: true,
       message: "Referral summary fetched successfully",
@@ -81,17 +125,11 @@ const getReferralSummary = async (req, res) => {
         appLink,
         referredBy: user.referredBy || null,
         totalReferrals,
-        totalEarned,
+        totalEarned: earnedFromReferring,
         totalAvailable,
         minWithdrawal,
         isEligibleForWithdrawal,
-        referrals: referralsMade.map((r) => ({
-          referredName: r.referredName,
-          referredEmail: r.referredEmail,
-          referrerBonus: r.referrerBonus,
-          referredBonus: r.referredBonus,
-          status: r.status,
-        })),
+        referrals, // 👈 unified array for cashback + referral bonuses
       },
     });
   } catch (err) {
