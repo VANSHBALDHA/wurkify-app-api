@@ -1,10 +1,15 @@
 const Referral = require("../models/Referral");
 const UserAuth = require("../models/AuthUsers");
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 const REFERRAL_APP_LINK =
   process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
+
+const RAZORPAY_KEY_ID = "rzp_live_RQErm1QXjwLHM9";
+const RAZORPAY_KEY_SECRET = "WjywpnGqjiMdvLPYhUnjQHTT";
+const BASE_URL = "https://api.razorpay.com/v1";
 
 const getReferralSummary = async (req, res) => {
   try {
@@ -138,6 +143,170 @@ const getReferralSummary = async (req, res) => {
   }
 };
 
+const withdrawReferralMoney = async (req, res) => {
+  try {
+    const { userId, upiId, bankAccount, ifsc } = req.body;
+
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID required" });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded._id !== userId) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const user = await UserAuth.findById(userId);
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+
+    // Calculate total withdrawable from referrals
+    const unpaidReferrals = await Referral.find({
+      referrerId: userId,
+      status: "approved",
+      referrerPaid: false,
+    });
+
+    const referredRecord = await Referral.findOne({
+      referredEmail: user.email,
+      status: "approved",
+      referredPaid: false,
+    });
+
+    const earnedFromReferring = unpaidReferrals.length * 50;
+    const earnedFromBeingReferred = referredRecord ? 25 : 0;
+    const totalWithdrawable = earnedFromReferring + earnedFromBeingReferred;
+
+    const minWithdrawal = 5000;
+    if (totalWithdrawable < minWithdrawal) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum withdrawal is ₹${minWithdrawal}. You currently have ₹${totalWithdrawable}.`,
+      });
+    }
+
+    // ✅ Step 1: Create contact (once per user)
+    let contactId = user.razorpayContactId;
+    if (!contactId) {
+      const contactRes = await axios.post(
+        `${BASE_URL}/contacts`,
+        {
+          name: user.name,
+          email: user.email,
+          type: "employee",
+          reference_id: user._id.toString(),
+        },
+        {
+          auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET },
+        }
+      );
+      contactId = contactRes.data.id;
+      user.razorpayContactId = contactId;
+    }
+
+    // ✅ Step 2: Create fund account (UPI or Bank)
+    let fundAccountRes;
+    if (upiId) {
+      fundAccountRes = await axios.post(
+        `${BASE_URL}/fund_accounts`,
+        {
+          contact_id: contactId,
+          account_type: "vpa",
+          vpa: { address: upiId },
+        },
+        {
+          auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET },
+        }
+      );
+    } else if (bankAccount && ifsc) {
+      fundAccountRes = await axios.post(
+        `${BASE_URL}/fund_accounts`,
+        {
+          contact_id: contactId,
+          account_type: "bank_account",
+          bank_account: {
+            name: user.name,
+            account_number: bankAccount,
+            ifsc: ifsc,
+          },
+        },
+        {
+          auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET },
+        }
+      );
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Provide either UPI ID or bank account + IFSC",
+      });
+    }
+
+    const fundAccountId = fundAccountRes.data.id;
+
+    // ✅ Step 3: Create payout request
+    const payoutRes = await axios.post(
+      `${BASE_URL}/payouts`,
+      {
+        account_number: "300004000017531",
+        fund_account_id: fundAccountId,
+        amount: totalWithdrawable * 100,
+        currency: "INR",
+        mode: upiId ? "UPI" : "IMPS",
+        purpose: "payout",
+        queue_if_low_balance: true,
+        narration: "Referral Withdrawal",
+      },
+      {
+        auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET },
+      }
+    );
+
+    // ✅ Step 4: Update referral + user data
+    await Referral.updateMany(
+      { referrerId: userId, status: "approved", referrerPaid: false },
+      { $set: { referrerPaid: true } }
+    );
+
+    if (referredRecord) {
+      referredRecord.referredPaid = true;
+      await referredRecord.save();
+    }
+
+    user.referralWithdrawals = user.referralWithdrawals || [];
+    user.referralWithdrawals.push({
+      amount: totalWithdrawable,
+      date: new Date(),
+      razorpayPayoutId: payoutRes.data.id,
+      status: payoutRes.data.status || "processing",
+    });
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: `₹${totalWithdrawable} payout initiated via Razorpay.`,
+      data: payoutRes.data,
+    });
+  } catch (err) {
+    console.error("withdrawReferralMoney error:", err.response?.data || err);
+    res.status(500).json({
+      success: false,
+      message: "Withdrawal failed",
+      error: err.response?.data || err.message,
+    });
+  }
+};
+
 module.exports = {
   getReferralSummary,
+  withdrawReferralMoney,
 };
