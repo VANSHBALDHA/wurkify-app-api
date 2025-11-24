@@ -1,7 +1,7 @@
 const config = {
     secret_jwt: "wurkify_app",
-    emailUser: "baldhavansh2505@gmail.com",
-    emailPassword: "wucumhynzvzsgvzn",
+    emailUser: "wurkify01@gmail.com",
+    emailPassword: "wrexrjgythzzjvtt",
   };
   
   module.exports = config;

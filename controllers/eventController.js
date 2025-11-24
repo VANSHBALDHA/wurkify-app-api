@@ -9,6 +9,7 @@ const { io, onlineUsers } = require("../server");
 const moment = require("moment");
 const { sendNotification } = require("../middlewares/notificationService");
 const { checkProfileCompletion } = require("../utils/profileValidator");
+const { organizerMessages } = require("../utils/organizerNotifications");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -511,6 +512,13 @@ const createEvent = async (req, res) => {
     }
 
     const newEvent = await Event.create(eventData);
+
+    await sendNotification({
+      receiver_id: userId,
+      type: "event",
+      event_id: newEvent._id,
+      ...organizerMessages.createEvent(eventName),
+    });
 
     return res.status(201).json({
       success: true,
