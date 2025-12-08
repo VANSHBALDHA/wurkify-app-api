@@ -24,6 +24,8 @@ const notificationSchema = new mongoose.Schema(
         "custom",
         "attendance",
         "checkout",
+        "event-completed",
+        "payment",
       ],
       default: "custom",
     },

@@ -4,12 +4,10 @@ const EventApplication = require("../models/EventApplication");
 const UserAuth = require("../models/AuthUsers");
 const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
-const Razorpay = require("razorpay");
 const { sendNotification } = require("../middlewares/notificationService");
 const { default: axios } = require("axios");
 const { seekerMessages } = require("../utils/seekerNotifications");
 const { organizerMessages } = require("../utils/organizerNotifications");
-const crypto = require("crypto");
 
 const RAZORPAY_KEY_ID =
   process.env.RAZORPAY_KEY_ID || "rzp_live_RQErm1QXjwLHM9";
@@ -126,7 +124,7 @@ const releasePaymentToSeeker = async (req, res) => {
           sender_id: organizerId,
           receiver_id: seeker.seeker_id,
           event_id: eventId,
-          type: "event-completed",
+          type: "event",
           title: "Event Completed 🎉",
           message: `All payments for the event "${event.eventName}" have been completed. The event is now marked as completed.`,
         });
@@ -398,17 +396,18 @@ const updatePaymentStatus = async (req, res) => {
 
     console.log("✅ Payment captured:", captureRes.data.id);
     if (organizerId && seeker) {
+      const seekerDoc = await UserAuth.findById(seekerId);
       const orgMsg = organizerMessages.paySuccess(
         event.eventName,
-        seeker.name,
+        seekerDoc?.name || "Seeker",
         creditAmount
       );
 
       await sendNotification({
         sender_id: organizerId,
         receiver_id: organizerId,
-        event_id: eventObjectId,
-        type: "payment",
+        event_id: eventId,
+        type: "earning", // or "event"
         title: orgMsg.title,
         message: orgMsg.message,
       });
@@ -422,10 +421,10 @@ const updatePaymentStatus = async (req, res) => {
       );
 
       await sendNotification({
-        sender_id: organizerId || null,
-        receiver_id: seekerObjectId,
-        event_id: eventObjectId,
-        type: "payment",
+        sender_id: organizerId,
+        receiver_id: seekerId,
+        event_id: eventId,
+        type: "earning", // or "event"
         title: seekerMsg.title,
         message: seekerMsg.message,
       });
