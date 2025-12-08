@@ -613,7 +613,6 @@ const googleLogin = async (req, res) => {
       });
     }
 
-    // Verify Google ID Token
     const ticket = await client.verifyIdToken({
       idToken: token,
       audience:
@@ -688,6 +687,7 @@ const googleLogin = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Google login failed",
+      error: err.message,
     });
   }
 };
