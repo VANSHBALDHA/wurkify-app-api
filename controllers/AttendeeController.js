@@ -375,20 +375,25 @@ const getMyTimesheet = async (req, res) => {
       userId: decoded._id,
     });
 
-    if (!record) {
+    if (!record || !record.sessions.length) {
       return res.status(200).json({
         success: true,
         timesheet: [
           {
             checkinTime: "00:00",
             checkoutTime: "00:00",
-            checkinStatus: "pending",
-            checkoutStatus: "pending",
+            checkinStatus: "none",
+            checkoutStatus: "none",
             checkinSelfie: null,
             checkoutSelfie: null,
             totalHours: "0.00",
           },
         ],
+        uiState: {
+          canCheckin: true,
+          canCheckout: false,
+          message: "You have not checked in yet.",
+        },
       });
     }
 
@@ -408,9 +413,44 @@ const getMyTimesheet = async (req, res) => {
           : "0.00",
     }));
 
+    const last = record.sessions[record.sessions.length - 1];
+
+    let canCheckin = false;
+    let canCheckout = false;
+    let message = "";
+
+    if (!last.checkinTime) {
+      // just in case
+      canCheckin = true;
+      message = "You can check in.";
+    } else if (!last.checkoutTime) {
+      // user has checked in but not checked out yet
+      if (last.checkinStatus === "approved") {
+        canCheckout = true;
+        message = "Your check-in is approved. You can check out.";
+      } else if (last.checkinStatus === "pending") {
+        canCheckin = false;
+        canCheckout = false;
+        message = "Your check-in is pending approval.";
+      } else if (last.checkinStatus === "rejected") {
+        // maybe allow re-check-in?
+        canCheckin = true;
+        message = "Your check-in was rejected. Please check in again.";
+      }
+    } else {
+      // both checkin & checkout done → allow new check-in
+      canCheckin = true;
+      message = "You have completed your last session. You can check in again.";
+    }
+
     res.status(200).json({
       success: true,
       timesheet,
+      uiState: {
+        canCheckin,
+        canCheckout,
+        message,
+      },
     });
   } catch (err) {
     console.error("Get My Timesheet Error:", err);
