@@ -332,18 +332,6 @@ const updatePaymentStatus = async (req, res) => {
         .json({ success: false, message: "Missing fields" });
     }
 
-    const expectedSignature = crypto
-      .createHmac("sha256", RAZORPAY_KEY_SECRET)
-      .update(paymentId.toString())
-      .digest("hex");
-
-    if (expectedSignature !== signature) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment signature",
-      });
-    }
-
     const eventObjectId = new mongoose.Types.ObjectId(eventId);
     const seekerObjectId = new mongoose.Types.ObjectId(seekerId);
 
@@ -356,24 +344,6 @@ const updatePaymentStatus = async (req, res) => {
 
     const organizerId = event.organizer_id;
     const seeker = await UserAuth.findById(seekerObjectId);
-
-    const captureAmount = (amount || event.paymentAmount) * 100;
-
-    const captureRes = await axios.post(
-      `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
-      {
-        amount: captureAmount,
-        currency: "INR",
-      },
-      {
-        auth: {
-          username: RAZORPAY_KEY_ID,
-          password: RAZORPAY_KEY_SECRET,
-        },
-      }
-    );
-
-    console.log("✅ Payment captured:", captureRes.data.id);
 
     // ✅ Update or create application
     let application = await EventApplication.findOneAndUpdate(
@@ -445,6 +415,22 @@ const updatePaymentStatus = async (req, res) => {
         message: seekerMsg.message,
       });
     }
+
+    const captureRes = await axios.post(
+      `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
+      {
+        amount: creditAmount,
+        currency: "INR",
+      },
+      {
+        auth: {
+          username: RAZORPAY_KEY_ID,
+          password: RAZORPAY_KEY_SECRET,
+        },
+      }
+    );
+
+    console.log("✅ Payment captured:", captureRes.data.id);
 
     return res.status(200).json({
       success: true,
