@@ -10,6 +10,7 @@ const moment = require("moment");
 const { sendNotification } = require("../middlewares/notificationService");
 const { checkProfileCompletion } = require("../utils/profileValidator");
 const { organizerMessages } = require("../utils/organizerNotifications");
+const { seekerMessages } = require("../utils/seekerNotifications");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -970,22 +971,25 @@ const applyToEvent = async (req, res) => {
       event_id: eventId,
     });
 
+    const pendingCount = await EventApplication.countDocuments({
+      event_id: eventId,
+      applicationStatus: { $in: [null, "pending"] },
+    });
+
     await sendNotification({
       sender_id: seekerId,
       receiver_id: event.organizer_id,
       event_id: eventId,
       type: "event",
-      title: "New Application",
-      message: `${seeker.name} has applied for your event: ${event.eventName}`,
+      ...organizerMessages.newApplicants(event.eventName, pendingCount),
     });
 
     await sendNotification({
-      sender_id: event.organizer_id, // organizer is sender
-      receiver_id: seekerId, // seeker is receiver
+      sender_id: event.organizer_id,
+      receiver_id: seekerId,
       event_id: eventId,
       type: "event",
-      title: "Application Submitted",
-      message: `You have successfully applied to "${event.eventName}". Please wait for organizer's response.`,
+      ...seekerMessages.applied(event.eventName),
     });
 
     return res.status(201).json({
@@ -1209,13 +1213,65 @@ const updateApplicationStatus = async (req, res) => {
       }
     }
 
+    const seekerName = application.seeker_id.name;
+    const seekerId = application.seeker_id._id;
+
+    // 🔹 1) Organizer self feedback
+    if (status === "accepted") {
+      const { title, message } = organizerMessages.acceptApplicant(
+        event.eventName,
+        seekerName
+      );
+      await sendNotification({
+        sender_id: organizerId,
+        receiver_id: organizerId,
+        event_id: eventId,
+        type: "event",
+        title,
+        message,
+      });
+
+      // Optional: first time group created – organizer groupCreated
+      // (only if you want a separate notification when group is created)
+      // const groupMsg = organizerMessages.groupCreated(event.eventName);
+      // await sendNotification({
+      //   sender_id: organizerId,
+      //   receiver_id: organizerId,
+      //   event_id: eventId,
+      //   type: "event",
+      //   ...groupMsg,
+      // });
+    } else if (status === "rejected") {
+      const { title, message } = organizerMessages.rejectApplicant(
+        event.eventName,
+        seekerName
+      );
+      await sendNotification({
+        sender_id: organizerId,
+        receiver_id: organizerId,
+        event_id: eventId,
+        type: "event",
+        title,
+        message,
+      });
+    }
+
+    // 🔹 2) Seeker notification (Accepted / Rejected)
+    let seekerTemplate;
+
+    if (status === "accepted") {
+      seekerTemplate = seekerMessages.accepted(event.eventName);
+    } else {
+      seekerTemplate = seekerMessages.rejected(event.eventName);
+    }
+
     await sendNotification({
       sender_id: organizerId,
-      receiver_id: applicationId,
+      receiver_id: seekerId,
       event_id: eventId,
       type: "event",
-      title: "Application Update",
-      message: `Your application for "${event.eventName}" has been ${status}`,
+      title: seekerTemplate.title,
+      message: seekerTemplate.message,
     });
 
     return res.status(200).json({

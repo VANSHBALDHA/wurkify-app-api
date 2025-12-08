@@ -7,6 +7,8 @@ const Wallet = require("../models/Wallet");
 const Razorpay = require("razorpay");
 const { sendNotification } = require("../middlewares/notificationService");
 const { default: axios } = require("axios");
+const { seekerMessages } = require("../utils/seekerNotifications");
+const { organizerMessages } = require("../utils/organizerNotifications");
 
 const instance = new Razorpay({
   key_id: "rzp_live_RQErm1QXjwLHM9",
@@ -78,6 +80,33 @@ const releasePaymentToSeeker = async (req, res) => {
     });
 
     await wallet.save();
+
+    const orgMsg = organizerMessages.paySuccess(
+      event.eventName,
+      seeker.name,
+      amount
+    );
+
+    await sendNotification({
+      sender_id: organizerId,
+      receiver_id: organizerId,
+      event_id: eventId,
+      type: "payment",
+      title: orgMsg.title,
+      message: orgMsg.message,
+    });
+
+    // 🔹 Seeker notification: "Payment Confirmation"
+    const seekerMsg = seekerMessages.paymentCredited(event.eventName, amount);
+
+    await sendNotification({
+      sender_id: organizerId,
+      receiver_id: seekerId,
+      event_id: eventId,
+      type: "payment",
+      title: seekerMsg.title,
+      message: seekerMsg.message,
+    });
 
     // ✅ Mark payment as credited in EventApplication
     await EventApplication.findOneAndUpdate(
@@ -357,6 +386,9 @@ const updatePaymentStatus = async (req, res) => {
         .json({ success: false, message: "Event not found" });
     }
 
+    const organizerId = event.organizer_id;
+    const seeker = await UserAuth.findById(seekerObjectId);
+
     // ✅ Update or create application
     let application = await EventApplication.findOneAndUpdate(
       { event_id: eventObjectId, seeker_id: seekerObjectId },
@@ -393,6 +425,40 @@ const updatePaymentStatus = async (req, res) => {
     });
 
     await wallet.save();
+
+    if (organizerId && seeker) {
+      const orgMsg = organizerMessages.paySuccess(
+        event.eventName,
+        seeker.name,
+        creditAmount
+      );
+
+      await sendNotification({
+        sender_id: organizerId,
+        receiver_id: organizerId,
+        event_id: eventObjectId,
+        type: "payment",
+        title: orgMsg.title,
+        message: orgMsg.message,
+      });
+    }
+
+    // 🔹 Seeker notification: payment credited
+    if (seeker) {
+      const seekerMsg = seekerMessages.paymentCredited(
+        event.eventName,
+        creditAmount
+      );
+
+      await sendNotification({
+        sender_id: organizerId || null,
+        receiver_id: seekerObjectId,
+        event_id: eventObjectId,
+        type: "payment",
+        title: seekerMsg.title,
+        message: seekerMsg.message,
+      });
+    }
 
     return res.status(200).json({
       success: true,

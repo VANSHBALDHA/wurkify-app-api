@@ -1,6 +1,6 @@
 const Notification = require("../models/Notification");
 const UserProfile = require("../models/UserProfile");
-const admin = require("../firebase"); // import firebase config
+const admin = require("../firebase");
 
 const sendNotification = async (data) => {
   try {

@@ -9,6 +9,8 @@ const UserProfile = require("../models/UserProfile");
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
 const { format } = require("date-fns");
+const { seekerMessages } = require("../utils/seekerNotifications");
+const { organizerMessages } = require("../utils/organizerNotifications");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -71,26 +73,32 @@ const submitCheckin = async (req, res) => {
       { new: true, upsert: true }
     );
 
-    // notify organizer
+    // notify organizer – can use attendanceCheckin template if you have seeker name
+    const seekerName = decoded.name || "An attendee";
+    const orgTemplate = organizerMessages.attendanceCheckin(
+      event.eventName,
+      seekerName
+    );
+
     await sendNotification({
       sender_id: userId,
       receiver_id: event.organizer_id,
       event_id: eventId,
       type: "checkin",
-      title: "New Check-in Request",
-      message: `${decoded.name || "An attendee"} has checked in for “${
-        event.eventName
-      }” and is awaiting approval.`,
+      title: orgTemplate.title,
+      message: orgTemplate.message,
     });
 
-    // notify user
+    // notify seeker – attendance verification flow
+    const seekerTemplate = seekerMessages.checkinSubmitted(event.eventName);
+
     await sendNotification({
       sender_id: event.organizer_id,
       receiver_id: userId,
       event_id: eventId,
       type: "checkin",
-      title: "Check-in Submitted",
-      message: `Your check-in for “${event.eventName}” has been submitted for approval.`,
+      title: seekerTemplate.title,
+      message: seekerTemplate.message,
     });
 
     res.status(201).json({
@@ -150,24 +158,28 @@ const submitCheckout = async (req, res) => {
 
     const event = await Event.findById(eventId);
 
+    // organizer – you can keep the custom text or add an organizer template later
     await sendNotification({
       sender_id: userId,
       receiver_id: event.organizer_id,
       event_id: eventId,
       type: "checkout",
       title: "New Check-out Request",
-      message: `${decoded.name || "An attendee"} has checked out for “${
+      message: `${decoded.name || "An attendee"} has checked out for "${
         event.eventName
-      }” awaiting your approval.`,
+      }" awaiting your approval.`,
     });
+
+    // seeker – use template
+    const seekerTemplate = seekerMessages.checkoutSubmitted(event.eventName);
 
     await sendNotification({
       sender_id: event.organizer_id,
       receiver_id: userId,
       event_id: eventId,
       type: "checkout",
-      title: "Check-out Submitted",
-      message: `Your check-out for “${event.eventName}” has been submitted for approval.`,
+      title: seekerTemplate.title,
+      message: seekerTemplate.message,
     });
 
     res.status(201).json({
@@ -291,13 +303,27 @@ const updateAttendanceStatus = async (req, res) => {
 
     const event = await Event.findById(record.eventId);
 
+    let template;
+
+    if (type === "checkin") {
+      template =
+        status === "approved"
+          ? seekerMessages.checkinApproved(event.eventName)
+          : seekerMessages.checkinRejected(event.eventName);
+    } else if (type === "checkout") {
+      template =
+        status === "approved"
+          ? seekerMessages.checkoutApproved(event.eventName)
+          : seekerMessages.checkoutRejected(event.eventName);
+    }
+
     await sendNotification({
       sender_id: decoded._id,
       receiver_id: record.userId._id,
       event_id: event._id,
       type: "attendance",
-      title: "Attendance Update",
-      message: `Your ${type} for “${event.eventName}” was ${status}.`,
+      title: template.title,
+      message: template.message,
     });
 
     res.status(200).json({
