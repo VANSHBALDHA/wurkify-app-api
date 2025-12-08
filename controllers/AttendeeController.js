@@ -375,10 +375,22 @@ const getMyTimesheet = async (req, res) => {
       userId: decoded._id,
     });
 
-    if (!record)
-      return res
-        .status(200)
-        .json({ success: false, message: "No attendance found" });
+    if (!record) {
+      return res.status(200).json({
+        success: true,
+        timesheet: [
+          {
+            checkinTime: "00:00",
+            checkoutTime: "00:00",
+            checkinStatus: "pending",
+            checkoutStatus: "pending",
+            checkinSelfie: null,
+            checkoutSelfie: null,
+            totalHours: "0.00",
+          },
+        ],
+      });
+    }
 
     const timesheet = record.sessions.map((s) => ({
       checkinTime: formatDateTime(s.checkinTime),
