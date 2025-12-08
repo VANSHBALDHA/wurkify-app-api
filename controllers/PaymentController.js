@@ -16,10 +16,6 @@ const RAZORPAY_KEY_SECRET =
 const RAZORPAY_ACCOUNT_NUMBER =
   process.env.RAZORPAY_ACCOUNT_NUMBER || "300004000017531";
 
-const isTestMode =
-  RAZORPAY_KEY_ID.startsWith("rzp_test_") ||
-  process.env.NODE_ENV !== "production";
-
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
 const releasePaymentToSeeker = async (req, res) => {
@@ -552,7 +548,8 @@ const withdrawSeekerEarnings = async (req, res) => {
 
     const { amount, upiId } = req.body;
 
-    if (!amount || amount <= 0) {
+    const numericAmount = Number(amount);
+    if (!numericAmount || numericAmount <= 0) {
       await session.abortTransaction();
       return res
         .status(400)
@@ -585,26 +582,27 @@ const withdrawSeekerEarnings = async (req, res) => {
     const wallet = await Wallet.findOne({ seeker_id: seekerId }).session(
       session
     );
-    if (!wallet || wallet.balance < amount) {
+    if (!wallet || wallet.balance < numericAmount) {
       await session.abortTransaction();
       return res
         .status(400)
         .json({ success: false, message: "Insufficient wallet balance" });
     }
 
-    if (amount < 1) {
+    if (numericAmount < 1) {
       await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ success: false, message: "Minimum withdrawal amount is ₹1" });
+      return res.status(400).json({
+        success: false,
+        message: "Minimum withdrawal amount is ₹1",
+      });
     }
 
-    let payout;
-    // ✅ Live RazorpayX Payout Flow
-    console.log("🔗 Creating real RazorpayX payout...");
+    // -------- RazorpayX payout process --------
+    console.log("🔗 Creating RazorpayX payout for seeker:", seekerId);
+    console.log("user", user);
 
-    // Step 1: Create Contact
-    const contact = await axios.post(
+    // 1) Contact
+    const contactRes = await axios.post(
       "https://api.razorpay.com/v1/contacts",
       {
         name: user.name || "Seeker User",
@@ -612,44 +610,61 @@ const withdrawSeekerEarnings = async (req, res) => {
         contact: user.phone || "9106792692",
         type: "customer",
       },
-      { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+      {
+        auth: {
+          username: "rzp_live_RQErm1QXjwLHM9",
+          password: "WjywpnGqjiMdvLPYhUnjQHTT",
+        },
+      }
     );
 
-    // Step 2: Create Fund Account
-    const fundAccount = await axios.post(
+    // 2) Fund account (UPI)
+    const fundAccountRes = await axios.post(
       "https://api.razorpay.com/v1/fund_accounts",
       {
-        contact_id: contact.data.id,
+        contact_id: contactRes.data.id,
         account_type: "vpa",
-        vpa: { address: upiId },
+        vpa: {
+          address: upiId,
+        },
       },
-      { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+      {
+        auth: {
+          username: "rzp_live_RQErm1QXjwLHM9",
+          password: "WjywpnGqjiMdvLPYhUnjQHTT",
+        },
+      }
     );
 
-    // Step 3: Create Payout
+    // 3) Payout
     const payoutRes = await axios.post(
       "https://api.razorpay.com/v1/payouts",
       {
-        account_number: RAZORPAY_ACCOUNT_NUMBER,
-        fund_account_id: fundAccount.data.id,
-        amount: amount * 100,
+        account_number: "300004000017531",
+        fund_account_id: fundAccountRes.data.id,
+        amount: Math.round(numericAmount * 100),
         currency: "INR",
         mode: "UPI",
         purpose: "payout",
         queue_if_low_balance: true,
         narration: "Seeker Wallet Withdrawal",
       },
-      { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+      {
+        auth: {
+          username: "rzp_live_RQErm1QXjwLHM9",
+          password: "WjywpnGqjiMdvLPYhUnjQHTT",
+        },
+      }
     );
 
-    payout = payoutRes.data;
-    console.log("✅ RazorpayX payout created:", payout.id);
+    const payout = payoutRes.data;
+    console.log("✅ RazorpayX payout created:", payout.id, payout.status);
 
-    // 💰 Update wallet after payout
-    wallet.balance -= amount;
+    // -------- Update wallet locally --------
+    wallet.balance -= numericAmount;
     wallet.transactions.push({
       type: "debit",
-      amount,
+      amount: numericAmount,
       description: `Withdrawal via RazorpayX (Payout ID: ${payout.id})`,
       date: new Date(),
       status: payout.status || "processing",
@@ -660,19 +675,43 @@ const withdrawSeekerEarnings = async (req, res) => {
     await wallet.save({ session });
     await session.commitTransaction();
 
+    // -------- Send notification to seeker --------
+    try {
+      await sendNotification({
+        sender_id: seekerId, // user initiated it
+        receiver_id: seekerId, // notify same user
+        event_id: null, // no specific event; you can omit or keep null
+        type: "withdrawal",
+        title: "Withdrawal Initiated 💸",
+        message: `Your withdrawal request of ₹${numericAmount} to UPI ID ${upiId} has been initiated. Payout ID: ${
+          payout.id
+        }. Status: ${payout.status || "processing"}.`,
+      });
+    } catch (notifyErr) {
+      // Don't fail the API if notification fails
+      console.error("Notification error (withdrawal):", notifyErr);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Withdrawal initiated successfully",
       payoutId: payout.id,
+      payoutStatus: payout.status,
       walletBalance: wallet.balance,
-      mode: "live",
     });
   } catch (err) {
     await session.abortTransaction();
-    console.error("Withdraw Error:", err.response?.data || err.message);
+    console.error(
+      "Withdraw Error:",
+      err.response?.data || err.message,
+      "URL:",
+      err.response?.config?.url
+    );
+
     return res.status(500).json({
       success: false,
-      message: err.response?.data?.error?.description || err.message,
+      message: err.response?.data?.error?.description || "Withdraw failed",
+      razorpay: err.response?.data,
     });
   } finally {
     session.endSession();
