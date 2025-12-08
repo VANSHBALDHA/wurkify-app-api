@@ -382,6 +382,21 @@ const updatePaymentStatus = async (req, res) => {
 
     await wallet.save();
 
+    const captureRes = await axios.post(
+      `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
+      {
+        amount: creditAmount,
+        currency: "INR",
+      },
+      {
+        auth: {
+          username: RAZORPAY_KEY_ID,
+          password: RAZORPAY_KEY_SECRET,
+        },
+      }
+    );
+
+    console.log("✅ Payment captured:", captureRes.data.id);
     if (organizerId && seeker) {
       const orgMsg = organizerMessages.paySuccess(
         event.eventName,
@@ -415,22 +430,6 @@ const updatePaymentStatus = async (req, res) => {
         message: seekerMsg.message,
       });
     }
-
-    const captureRes = await axios.post(
-      `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
-      {
-        amount: creditAmount,
-        currency: "INR",
-      },
-      {
-        auth: {
-          username: RAZORPAY_KEY_ID,
-          password: RAZORPAY_KEY_SECRET,
-        },
-      }
-    );
-
-    console.log("✅ Payment captured:", captureRes.data.id);
 
     return res.status(200).json({
       success: true,
