@@ -332,10 +332,9 @@ const updatePaymentStatus = async (req, res) => {
         .json({ success: false, message: "Missing fields" });
     }
 
-    const body = orderId + "|" + paymentId;
     const expectedSignature = crypto
       .createHmac("sha256", RAZORPAY_KEY_SECRET)
-      .update(body.toString())
+      .update(paymentId.toString())
       .digest("hex");
 
     if (expectedSignature !== signature) {
