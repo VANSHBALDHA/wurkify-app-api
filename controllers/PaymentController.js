@@ -9,11 +9,7 @@ const { sendNotification } = require("../middlewares/notificationService");
 const { default: axios } = require("axios");
 const { seekerMessages } = require("../utils/seekerNotifications");
 const { organizerMessages } = require("../utils/organizerNotifications");
-
-const instance = new Razorpay({
-  key_id: "rzp_live_RQErm1QXjwLHM9",
-  key_secret: "WjywpnGqjiMdvLPYhUnjQHTT",
-});
+const crypto = require("crypto");
 
 const RAZORPAY_KEY_ID =
   process.env.RAZORPAY_KEY_ID || "rzp_live_RQErm1QXjwLHM9";
@@ -28,9 +24,6 @@ const isTestMode =
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
-/**
- * ✅ Organizer releases payment to seeker (credits their wallet)
- */
 const releasePaymentToSeeker = async (req, res) => {
   try {
     const { eventId, seekerId, amount } = req.body;
@@ -41,7 +34,6 @@ const releasePaymentToSeeker = async (req, res) => {
         .json({ success: false, message: "Missing fields" });
     }
 
-    // ✅ Validate organizer
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
@@ -51,7 +43,6 @@ const releasePaymentToSeeker = async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const organizerId = decoded._id;
 
-    // ✅ Verify event ownership
     const event = await Event.findOne({
       _id: eventId,
       organizer_id: organizerId,
@@ -63,13 +54,11 @@ const releasePaymentToSeeker = async (req, res) => {
       });
     }
 
-    // ✅ Find or create wallet for seeker
     let wallet = await Wallet.findOne({ seeker_id: seekerId });
     if (!wallet) {
       wallet = new Wallet({ seeker_id: seekerId, balance: 0 });
     }
 
-    // ✅ Add credit transaction
     wallet.balance += amount;
     wallet.transactions.push({
       type: "credit",
@@ -96,7 +85,6 @@ const releasePaymentToSeeker = async (req, res) => {
       message: orgMsg.message,
     });
 
-    // 🔹 Seeker notification: "Payment Confirmation"
     const seekerMsg = seekerMessages.paymentCredited(event.eventName, amount);
 
     await sendNotification({
@@ -108,24 +96,20 @@ const releasePaymentToSeeker = async (req, res) => {
       message: seekerMsg.message,
     });
 
-    // ✅ Mark payment as credited in EventApplication
     await EventApplication.findOneAndUpdate(
       { event_id: eventId, seeker_id: seekerId },
       { paymentStatus: "credited", paymentReceivedAt: new Date() },
       { new: true }
     );
 
-    // ✅ Check if all seekers for this event are paid
     const allApplications = await EventApplication.find({ event_id: eventId });
     const allPaid = allApplications.every(
       (a) => a.paymentStatus === "completed" || a.paymentStatus === "credited"
     );
 
     if (allPaid) {
-      // ✅ Mark the event as completed automatically
       await Event.findByIdAndUpdate(eventId, { eventStatus: "completed" });
 
-      // ✅ Delete the event group if exists
       const deletedGroup = await Group.findOneAndDelete({ event_id: eventId });
       if (deletedGroup) {
         console.log(
@@ -133,7 +117,6 @@ const releasePaymentToSeeker = async (req, res) => {
         );
       }
 
-      // ✅ Notify all accepted seekers
       const acceptedSeekers = allApplications.filter(
         (a) => a.applicationStatus === "accepted"
       );
@@ -148,10 +131,6 @@ const releasePaymentToSeeker = async (req, res) => {
           message: `All payments for the event "${event.eventName}" have been completed. The event is now marked as completed.`,
         });
       }
-
-      console.log(
-        `✅ Event ${event.eventName} automatically marked as completed.`
-      );
     }
 
     return res.status(200).json({
@@ -165,18 +144,8 @@ const releasePaymentToSeeker = async (req, res) => {
   }
 };
 
-/**
- * ✅ Seeker: Fetch wallet balance and transactions
- */
 const getWalletDetails = async (req, res) => {
   try {
-    // const { seekerId } = req.body;
-    // if (!seekerId) {
-    //   return res
-    //     .status(400)
-    //     .json({ success: false, message: "Seeker ID required" });
-    // }
-
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({
@@ -222,12 +191,6 @@ const getWalletDetails = async (req, res) => {
   }
 };
 
-/**
- * Organizer: Fetch all events with payment summary
- */
-/**
- * Organizer: Fetch all events with payment summary + total spent
- */
 const getPaymentEventList = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -298,9 +261,6 @@ const getPaymentEventList = async (req, res) => {
   }
 };
 
-/**
- * Organizer: Fetch seeker payment details for a specific event
- */
 const getEventUserPayments = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -362,10 +322,6 @@ const getEventUserPayments = async (req, res) => {
   }
 };
 
-/**
- * ✅ Flutter-based payment success handler
- * Auto credits seeker’s wallet on payment success
- */
 const updatePaymentStatus = async (req, res) => {
   try {
     const { eventId, seekerId, paymentId, amount } = req.body;
@@ -374,6 +330,19 @@ const updatePaymentStatus = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: "Missing fields" });
+    }
+
+    const body = orderId + "|" + paymentId;
+    const expectedSignature = crypto
+      .createHmac("sha256", RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest("hex");
+
+    if (expectedSignature !== signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment signature",
+      });
     }
 
     const eventObjectId = new mongoose.Types.ObjectId(eventId);
@@ -388,6 +357,24 @@ const updatePaymentStatus = async (req, res) => {
 
     const organizerId = event.organizer_id;
     const seeker = await UserAuth.findById(seekerObjectId);
+
+    const captureAmount = (amount || event.paymentAmount) * 100;
+
+    const captureRes = await axios.post(
+      `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
+      {
+        amount: captureAmount,
+        currency: "INR",
+      },
+      {
+        auth: {
+          username: RAZORPAY_KEY_ID,
+          password: RAZORPAY_KEY_SECRET,
+        },
+      }
+    );
+
+    console.log("✅ Payment captured:", captureRes.data.id);
 
     // ✅ Update or create application
     let application = await EventApplication.findOneAndUpdate(
@@ -471,9 +458,6 @@ const updatePaymentStatus = async (req, res) => {
   }
 };
 
-/**
- * ✅ Seeker: Get all credited payments + total earning
- */
 const getSeekerEarnings = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -591,63 +575,50 @@ const withdrawSeekerEarnings = async (req, res) => {
     }
 
     let payout;
-    if (isTestMode) {
-      // 🧪 Simulation Mode (no actual payout)
-      payout = {
-        id: `sim_payout_${Date.now()}`,
-        status: "processing",
-        amount,
+    // ✅ Live RazorpayX Payout Flow
+    console.log("🔗 Creating real RazorpayX payout...");
+
+    // Step 1: Create Contact
+    const contact = await axios.post(
+      "https://api.razorpay.com/v1/contacts",
+      {
+        name: user.name || "Seeker User",
+        email: user.email || "noreply@example.com",
+        contact: user.phone || "9106792692",
+        type: "customer",
+      },
+      { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+    );
+
+    // Step 2: Create Fund Account
+    const fundAccount = await axios.post(
+      "https://api.razorpay.com/v1/fund_accounts",
+      {
+        contact_id: contact.data.id,
+        account_type: "vpa",
+        vpa: { address: upiId },
+      },
+      { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+    );
+
+    // Step 3: Create Payout
+    const payoutRes = await axios.post(
+      "https://api.razorpay.com/v1/payouts",
+      {
+        account_number: RAZORPAY_ACCOUNT_NUMBER,
+        fund_account_id: fundAccount.data.id,
+        amount: amount * 100,
+        currency: "INR",
         mode: "UPI",
-        description: "Simulated payout in test mode",
-      };
+        purpose: "payout",
+        queue_if_low_balance: true,
+        narration: "Seeker Wallet Withdrawal",
+      },
+      { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
+    );
 
-      console.log("⚙️ Simulated payout:", payout);
-    } else {
-      // ✅ Live RazorpayX Payout Flow
-      console.log("🔗 Creating real RazorpayX payout...");
-
-      // Step 1: Create Contact
-      const contact = await axios.post(
-        "https://api.razorpay.com/v1/contacts",
-        {
-          name: user.name || "Seeker User",
-          email: user.email || "noreply@example.com",
-          contact: user.phone || "9106792692",
-          type: "customer",
-        },
-        { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
-      );
-
-      // Step 2: Create Fund Account
-      const fundAccount = await axios.post(
-        "https://api.razorpay.com/v1/fund_accounts",
-        {
-          contact_id: contact.data.id,
-          account_type: "vpa",
-          vpa: { address: upiId },
-        },
-        { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
-      );
-
-      // Step 3: Create Payout
-      const payoutRes = await axios.post(
-        "https://api.razorpay.com/v1/payouts",
-        {
-          account_number: RAZORPAY_ACCOUNT_NUMBER,
-          fund_account_id: fundAccount.data.id,
-          amount: amount * 100,
-          currency: "INR",
-          mode: "UPI",
-          purpose: "payout",
-          queue_if_low_balance: true,
-          narration: "Seeker Wallet Withdrawal",
-        },
-        { auth: { username: RAZORPAY_KEY_ID, password: RAZORPAY_KEY_SECRET } }
-      );
-
-      payout = payoutRes.data;
-      console.log("✅ RazorpayX payout created:", payout.id);
-    }
+    payout = payoutRes.data;
+    console.log("✅ RazorpayX payout created:", payout.id);
 
     // 💰 Update wallet after payout
     wallet.balance -= amount;
@@ -666,12 +637,10 @@ const withdrawSeekerEarnings = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: isTestMode
-        ? "Simulated withdrawal (test mode)"
-        : "Withdrawal initiated successfully",
+      message: "Withdrawal initiated successfully",
       payoutId: payout.id,
       walletBalance: wallet.balance,
-      mode: isTestMode ? "simulation" : "live",
+      mode: "live",
     });
   } catch (err) {
     await session.abortTransaction();
