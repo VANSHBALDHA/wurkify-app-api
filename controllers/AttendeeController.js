@@ -364,7 +364,6 @@ const getAcceptedEventList = async (req, res) => {
 };
 
 /* =============== SEEKER: MY TIMESHEET =============== */
-/* =============== SEEKER: MY TIMESHEET =============== */
 const getMyTimesheet = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -378,7 +377,7 @@ const getMyTimesheet = async (req, res) => {
 
     if (!record)
       return res
-        .status(404)
+        .status(200)
         .json({ success: false, message: "No attendance found" });
 
     const timesheet = record.sessions.map((s) => ({
