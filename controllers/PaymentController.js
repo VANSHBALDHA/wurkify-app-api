@@ -367,7 +367,9 @@ const updatePaymentStatus = async (req, res) => {
       });
     }
 
-    const creditAmount = amount || event.paymentAmount;
+    const creditAmount = Number(amount || event.paymentAmount || 0);
+
+    console.log("creditAmount", creditAmount);
 
     wallet.balance += creditAmount;
     wallet.transactions.push({
@@ -380,21 +382,61 @@ const updatePaymentStatus = async (req, res) => {
 
     await wallet.save();
 
-    const captureRes = await axios.post(
-      `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
-      {
-        amount: creditAmount,
-        currency: "INR",
-      },
-      {
-        auth: {
-          username: RAZORPAY_KEY_ID,
-          password: RAZORPAY_KEY_SECRET,
-        },
-      }
-    );
+    if (!creditAmount || creditAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment amount",
+      });
+    }
 
-    console.log("✅ Payment captured:", captureRes.data.id);
+    const captureAmountPaise = Math.round(creditAmount * 100);
+
+    let captureRes;
+    try {
+      captureRes = await axios.post(
+        `https://api.razorpay.com/v1/payments/${paymentId}/capture`,
+        {
+          amount: captureAmountPaise,
+          currency: "INR",
+        },
+        {
+          auth: {
+            username: "rzp_live_RQErm1QXjwLHM9",
+            password: "WjywpnGqjiMdvLPYhUnjQHTT",
+          },
+        }
+      );
+
+      // If you want to be extra strict:
+      if (!captureRes.data || captureRes.data.status !== "captured") {
+        return res.status(400).json({
+          success: false,
+          message: "Payment capture failed or not in captured state",
+          razorpay: captureRes.data,
+        });
+      }
+
+      console.log("✅ Payment captured:", captureRes.data.id);
+    } catch (err) {
+      console.error("❌ Razorpay capture error:", err.response?.data || err);
+
+      // Common 401 cause: wrong key/secret OR using test keys for live payment
+      if (err.response?.status === 401) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Unauthorized with Razorpay. Check RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET and mode (test/live).",
+          razorpay: err.response.data,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Failed to capture payment with Razorpay",
+        razorpay: err.response?.data,
+      });
+    }
+
     if (organizerId && seeker) {
       const seekerDoc = await UserAuth.findById(seekerId);
       const orgMsg = organizerMessages.paySuccess(
