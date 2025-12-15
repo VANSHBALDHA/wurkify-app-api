@@ -14,9 +14,9 @@ const CASHFREE_BASE_URL = "https://sandbox.cashfree.com/payout";
 const test_key = "https://sandbox.cashfree.com/payout";
 const live_key = "https://api.cashfree.com/payout";
 
-const CASHFREE_CLIENT_ID = "CF10922453D4VSPNAKFP1C73A7UD90";
-const CASHFREE_CLIENT_SECRET =
-  "cfsk_ma_test_bd45dece507f3a0a369ad64b490e7c5f_7cd8cc7b";
+const CASHFREE_CLIENT_ID = process.env.CASHFREE_CLIENT_ID;
+const CASHFREE_CLIENT_SECRET = process.env.CASHFREE_CLIENT_SECRET;
+
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
