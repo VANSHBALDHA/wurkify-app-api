@@ -40,7 +40,9 @@ const sendMessage = async (req, res) => {
     }
 
     let media = [];
-    if (req.files && req.files.length > 0) {
+    let audio = null;
+
+    if (messageType === "media" && req.files?.length) {
       for (let file of req.files) {
         const streamUpload = () =>
           new Promise((resolve, reject) => {
@@ -52,21 +54,16 @@ const sendMessage = async (req, res) => {
           });
 
         const result = await streamUpload();
-        let normalizedType = ["mp3", "wav", "m4a"].includes(result.format)
-          ? "audio"
-          : result.resource_type;
 
         media.push({
           url: result.secure_url,
-          type: normalizedType,
+          type: result.resource_type,
           format: result.format,
           size: file.size,
           originalName: file.originalname,
         });
       }
     }
-
-    let audio = null;
 
     if (messageType === "audio" && req.files?.length) {
       const file = req.files[0];
@@ -76,7 +73,7 @@ const sendMessage = async (req, res) => {
           const stream = cloudinary.uploader.upload_stream(
             {
               folder: "group_messages",
-              resource_type: "audio",
+              resource_type: "auto",
             },
             (error, result) => (result ? resolve(result) : reject(error))
           );
@@ -121,6 +118,8 @@ const sendMessage = async (req, res) => {
       { userId },
       "profile_img fcm_token"
     ).lean();
+
+    console.log("senderProfile", senderProfile);
 
     const enrichedMessage = {
       _id: newMessage._id,
