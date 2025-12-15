@@ -221,13 +221,11 @@ const getPaymentEventList = async (req, res) => {
           paymentStatus: { $in: ["completed", "credited"] },
         });
 
-        // Calculate spend for this event
         const totalEventSpend = completedPayments.reduce(
           (sum, app) => sum + (app.paymentAmount || event.paymentAmount || 0),
           0
         );
 
-        // Add to overall total
         totalSpendMoney += totalEventSpend;
 
         return {
@@ -246,7 +244,7 @@ const getPaymentEventList = async (req, res) => {
       success: true,
       message: "Payment event list fetched successfully",
       totalEvents: formattedEvents.length,
-      totalSpendMoney, // ✅ added total spent money (across all events)
+      totalSpendMoney,
       events: formattedEvents,
     });
   } catch (err) {

@@ -27,7 +27,9 @@ const getSeekerRecentActivity = async (req, res) => {
       });
     }
 
-    // ✅ Fetch latest 5 applications
+    /* =======================
+       RECENT ACTIVITY (LAST 5)
+    ======================== */
     const applications = await EventApplication.find({ seeker_id: seekerId })
       .sort({ createdAt: -1 })
       .limit(5)
@@ -42,6 +44,8 @@ const getSeekerRecentActivity = async (req, res) => {
             "profile_img"
           );
 
+          console.log("app", app);
+
           return {
             event_id: app.event_id._id,
             eventName: app.event_id.eventName,
@@ -53,14 +57,18 @@ const getSeekerRecentActivity = async (req, res) => {
               ? organizerProfile.profile_img
               : null,
             appliedAt: app.appliedAt,
+            startDate: app.event_id.startDate,
+            endDate: app.event_id.endDate,
             applicationStatus: app.applicationStatus,
             paymentStatus: app.paymentStatus,
-            paymentAmount: app.paymentAmount,
+            paymentAmount: app.event_id.paymentAmount,
           };
         })
     );
 
-    // ✅ Basic counts
+    /* =======================
+       SUMMARY COUNTS
+    ======================== */
     const totalApplied = await EventApplication.countDocuments({
       seeker_id: seekerId,
     });
@@ -75,7 +83,6 @@ const getSeekerRecentActivity = async (req, res) => {
       status: "unread",
     });
 
-    // ✅ Calculate total earnings (sum of all completed payments)
     const earningsAgg = await EventApplication.aggregate([
       {
         $match: {
@@ -90,60 +97,49 @@ const getSeekerRecentActivity = async (req, res) => {
         },
       },
     ]);
+
     const totalEarnings = earningsAgg[0]?.totalEarnings || 0;
 
-    // ✅ Build last 12 months
-    const now = new Date();
-    const months = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = new Date(d.getFullYear(), d.getMonth(), 1);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      months.push({
-        label: `${d.getFullYear()}-${(d.getMonth() + 1)
-          .toString()
-          .padStart(2, "0")}`,
-        start,
-        end,
-      });
-    }
-
-    // ✅ Graph data: Applications & Earnings
-    const graphData = await Promise.all(
-      months.map(async ({ label, start, end }) => {
-        // Applications count
-        const appliedEvents = await EventApplication.countDocuments({
-          seeker_id: seekerId,
-          appliedAt: { $gte: start, $lt: end },
-        });
-
-        // Earnings sum (from completed payments)
-        const earningsAgg = await EventApplication.aggregate([
-          {
-            $match: {
-              seeker_id: new mongoose.Types.ObjectId(seekerId),
-              paymentStatus: "completed",
-              paymentReceivedAt: { $gte: start, $lt: end },
+    /* =======================
+       GRAPH DATA (FIXED PART)
+       ➜ ONLY MONTHS WITH DATA
+    ======================== */
+    const seekerAnalytics = await EventApplication.aggregate([
+      {
+        $match: {
+          seeker_id: new mongoose.Types.ObjectId(seekerId),
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$appliedAt" },
+            month: { $month: "$appliedAt" },
+          },
+          appliedEvents: { $sum: 1 },
+          earnings: {
+            $sum: {
+              $cond: [
+                { $eq: ["$paymentStatus", "completed"] },
+                "$paymentAmount",
+                0,
+              ],
             },
           },
-          {
-            $group: {
-              _id: null,
-              totalEarnings: { $sum: "$paymentAmount" },
-            },
-          },
-        ]);
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
+    ]);
 
-        const earnings = earningsAgg[0]?.totalEarnings || 0;
+    const graphData = seekerAnalytics.map((item) => ({
+      month: `${item._id.year}-${item._id.month.toString().padStart(2, "0")}`,
+      appliedEvents: item.appliedEvents,
+      earnings: item.earnings,
+    }));
 
-        return {
-          month: label,
-          appliedEvents,
-          earnings,
-        };
-      })
-    );
-
+    /* =======================
+       FINAL RESPONSE
+    ======================== */
     return res.status(200).json({
       success: true,
       message: "Seeker recent activity fetched successfully",
@@ -153,8 +149,8 @@ const getSeekerRecentActivity = async (req, res) => {
         totalApplied,
         totalAccepted,
         notificationCount,
-        totalEarnings, // ✅ added total earnings to stats
-        graphData,
+        totalEarnings,
+        graphData, // ✅ dynamic like organizer
       },
     });
   } catch (err) {
@@ -182,7 +178,6 @@ const getOrganizerDashboard = async (req, res) => {
       });
     }
 
-    // ✅ Basic event stats
     const totalRegistered = await Event.countDocuments({
       organizer_id: organizerId,
     });
@@ -195,7 +190,6 @@ const getOrganizerDashboard = async (req, res) => {
       eventStatus: "pending",
     });
 
-    // ✅ Get all event IDs for this organizer
     const events = await Event.find(
       { organizer_id: organizerId },
       "_id eventName paymentAmount createdAt"
@@ -218,25 +212,22 @@ const getOrganizerDashboard = async (req, res) => {
 
     const eventIds = events.map((e) => e._id);
 
-    // ✅ Fetch all paid applications (completed or credited)
     const paidApplications = await EventApplication.find({
       event_id: { $in: eventIds },
       paymentStatus: { $in: ["completed", "credited"] },
     });
 
-    // ✅ Calculate total spend = sum(paymentAmount) for all paid users
     const totalSpend = paidApplications.reduce((sum, app) => {
       const amount = app.paymentAmount || 0;
       return sum + amount;
     }, 0);
 
-    // ✅ Fix graph: total money spent per month (using paymentReceivedAt if exists)
     const analytics = await EventApplication.aggregate([
       {
         $match: {
           event_id: { $in: eventIds },
           paymentStatus: { $in: ["completed", "credited"] },
-          paymentReceivedAt: { $ne: null }, // ✅ ignore null dates
+          paymentReceivedAt: { $ne: null },
         },
       },
       {
@@ -252,7 +243,6 @@ const getOrganizerDashboard = async (req, res) => {
       { $sort: { "_id.year": 1, "_id.month": 1 } },
     ]);
 
-    // ✅ Prevent crash if _id is missing
     const eventAnalytics = analytics.map((item) => {
       const year = item._id?.year || 0;
       const month = item._id?.month || 0;
@@ -267,7 +257,6 @@ const getOrganizerDashboard = async (req, res) => {
       };
     });
 
-    // ✅ Organizer Profile + Recent Events
     const organizerProfile = await UserProfile.findOne(
       { userId: organizerId },
       "profile_img"
@@ -302,9 +291,9 @@ const getOrganizerDashboard = async (req, res) => {
         totalRegistered,
         totalCompleted,
         totalInProgress,
-        totalSpend, // ✅ now accurate total = paid users × their paid amount
+        totalSpend,
       },
-      analytics: eventAnalytics, // ✅ fixed graph data
+      analytics: eventAnalytics,
       recentActivity: formattedRecentEvents,
     });
   } catch (err) {
