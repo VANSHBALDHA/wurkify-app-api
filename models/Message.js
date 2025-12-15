@@ -6,12 +6,27 @@ const messageSchema = new mongoose.Schema({
     ref: "Group",
     required: true,
   },
+
   sender_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "UserAuth",
     required: true,
   },
+
+  messageType: {
+    type: String,
+    enum: ["text", "audio", "media"],
+    default: "text",
+  },
+
   text: { type: String },
+
+  audio: {
+    url: String,
+    duration: Number,
+    waveform: [Number],
+  },
+
   media: [
     {
       url: { type: String },
@@ -21,12 +36,15 @@ const messageSchema = new mongoose.Schema({
       originalName: { type: String },
     },
   ],
+
   status: {
     type: String,
     enum: ["sent", "delivered", "seen"],
     default: "sent",
   },
+
   createdAt: { type: Date, default: Date.now },
 });
 
-module.exports = mongoose.models.Message || mongoose.model("Message", messageSchema);
+module.exports =
+  mongoose.models.Message || mongoose.model("Message", messageSchema);

@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken");
 const Group = require("../models/Group");
 const Message = require("../models/Message");
 const UserProfile = require("../models/UserProfile");
-const UserAuth = require("../models/AuthUsers"); // needed for name/email/role
+const UserAuth = require("../models/AuthUsers");
 const { io } = require("../server");
 const admin = require("../firebase");
 const cloudinary = require("cloudinary").v2;
@@ -12,7 +12,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
 const sendMessage = async (req, res) => {
   try {
-    // 🔑 Authenticate user
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
@@ -20,7 +19,7 @@ const sendMessage = async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded._id;
 
-    const { groupId, text } = req.body;
+    const { groupId, text, messageType, duration } = req.body;
     if (!groupId) {
       return res
         .status(400)
@@ -40,7 +39,6 @@ const sendMessage = async (req, res) => {
         .json({ success: false, message: "You are not part of this group" });
     }
 
-    // 📤 Upload media files (if any) to Cloudinary
     let media = [];
     if (req.files && req.files.length > 0) {
       for (let file of req.files) {
@@ -68,24 +66,56 @@ const sendMessage = async (req, res) => {
       }
     }
 
-    if (!text && media.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Message content required" });
+    let audio = null;
+
+    if (messageType === "audio" && req.files?.length) {
+      const file = req.files[0];
+
+      const uploadAudio = () =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "group_messages",
+              resource_type: "audio",
+            },
+            (error, result) => (result ? resolve(result) : reject(error))
+          );
+
+          streamifier.createReadStream(file.buffer).pipe(stream);
+        });
+
+      const result = await uploadAudio();
+
+      audio = {
+        url: result.secure_url,
+        duration: Number(duration) || 0,
+        waveform: [],
+      };
     }
 
-    // 💾 Save message
+    if (
+      (messageType === "text" && !text) ||
+      (messageType === "media" && media.length === 0) ||
+      (messageType === "audio" && !audio)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Message content required",
+      });
+    }
+
     const newMessage = await Message.create({
       group_id: groupId,
       sender_id: userId,
-      text,
-      media,
+      messageType,
+      text: messageType === "text" ? text : null,
+      audio: messageType === "audio" ? audio : null,
+      media: messageType === "media" ? media : [],
       status: "sent",
     });
 
     await Message.findByIdAndUpdate(newMessage._id, { status: "delivered" });
 
-    // 👤 Get sender details for enrichment
     const sender = await UserAuth.findById(userId, "name email role").lean();
     const senderProfile = await UserProfile.findOne(
       { userId },
@@ -94,22 +124,20 @@ const sendMessage = async (req, res) => {
 
     const enrichedMessage = {
       _id: newMessage._id,
+      messageType: newMessage.messageType,
       text: newMessage.text,
-      media: newMessage.media || [],
+      audio: newMessage.audio,
       status: "delivered",
       createdAt: newMessage.createdAt,
       sender: {
-        _id: sender?._id,
-        name: sender?.name,
-        email: sender?.email,
-        role: sender?.role,
+        _id: sender._id,
+        name: sender.name,
         profile_img: senderProfile?.profile_img || "",
       },
     };
 
     io.to(groupId.toString()).emit("new-message", enrichedMessage);
 
-    // 📲 Send push notifications to other members
     for (let memberId of group.members) {
       if (memberId.toString() === userId.toString()) continue;
 
@@ -118,16 +146,16 @@ const sendMessage = async (req, res) => {
         "fcm_token"
       ).lean();
 
-      const preview =
-        text?.substring(0, 50) ||
-        (media.length > 0 ? `📎 ${media.length} attachment(s)` : "New message");
-
       if (memberProfile?.fcm_token) {
-        const preview =
-          text?.substring(0, 50) ||
-          (media.length > 0
-            ? `📎 ${media.length} attachment(s)`
-            : "New message");
+        let preview = "New message";
+
+        if (messageType === "text") {
+          preview = text?.substring(0, 50);
+        } else if (messageType === "audio") {
+          preview = "🎤 Voice message";
+        } else if (messageType === "media") {
+          preview = `📎 ${media.length} attachment(s)`;
+        }
 
         try {
           await admin.messaging().send({
@@ -139,7 +167,8 @@ const sendMessage = async (req, res) => {
             },
             data: {
               groupId: groupId.toString(),
-              senderId: userId.toString(),
+              messageType,
+              messageId: newMessage._id.toString(),
             },
           });
           console.log(`✅ Push sent to ${memberId}`);
@@ -190,8 +219,10 @@ const getMessages = async (req, res) => {
 
     const enrichedMessages = messages.map((m) => ({
       _id: m._id,
-      text: m.text,
-      media: m.media || [],
+      messageType: m.messageType,
+      text: m.messageType === "text" ? m.text : null,
+      audio: m.messageType === "audio" ? m.audio : null,
+      media: m.messageType === "media" ? m.media || [] : [],
       status: m.status,
       createdAt: m.createdAt,
       sender: {
