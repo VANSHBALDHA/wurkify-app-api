@@ -9,12 +9,14 @@ const { default: axios } = require("axios");
 const { seekerMessages } = require("../utils/seekerNotifications");
 const { organizerMessages } = require("../utils/organizerNotifications");
 
-const RAZORPAY_KEY_ID =
-  process.env.RAZORPAY_KEY_ID || "rzp_live_RQErm1QXjwLHM9";
-const RAZORPAY_KEY_SECRET =
-  process.env.RAZORPAY_KEY_SECRET || "WjywpnGqjiMdvLPYhUnjQHTT";
-const RAZORPAY_ACCOUNT_NUMBER =
-  process.env.RAZORPAY_ACCOUNT_NUMBER || "300004000017531";
+const CASHFREE_BASE_URL = "https://sandbox.cashfree.com/payout";
+
+const test_key = "https://sandbox.cashfree.com/payout";
+const live_key = "https://api.cashfree.com/payout";
+
+const CASHFREE_CLIENT_ID = "CF10922453D4VSPNAKFP1C73A7UD90";
+const CASHFREE_CLIENT_SECRET =
+  "cfsk_ma_test_bd45dece507f3a0a369ad64b490e7c5f_7cd8cc7b";
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -528,13 +530,73 @@ const getSeekerEarnings = async (req, res) => {
   }
 };
 
+const createCashfreeBeneficiary = async ({
+  userId,
+  name,
+  email,
+  phone,
+  upiId,
+}) => {
+  try {
+    await axios.post(
+      `${CASHFREE_BASE_URL}/beneficiary`,
+      {
+        beneId: userId.toString(),
+        name: name || "Seeker User",
+        email: email || `${userId}@app.com`,
+        phone: phone || "9999999999",
+        vpa: upiId,
+        address1: "India",
+      },
+      {
+        headers: {
+          "X-Client-Id": CASHFREE_CLIENT_ID,
+          "X-Client-Secret": CASHFREE_CLIENT_SECRET,
+        },
+      }
+    );
+    return true;
+  } catch (err) {
+    if (err.response?.data?.message?.includes("exists")) {
+      return true;
+    }
+    throw err;
+  }
+};
+
+const createCashfreeUPIPayout = async ({ userId, amount }) => {
+  const transferId = `CF_TXN_${Date.now()}`;
+
+  const response = await axios.post(
+    `${CASHFREE_BASE_URL}/transfer`,
+    {
+      transferId,
+      amount,
+      source: "DEFAULT",
+      beneId: userId.toString(),
+      transferMode: "upi",
+      remarks: "Seeker Wallet Withdrawal",
+    },
+    {
+      headers: {
+        "X-Client-Id": CASHFREE_CLIENT_ID,
+        "X-Client-Secret": CASHFREE_CLIENT_SECRET,
+      },
+    }
+  );
+
+  return response.data;
+};
+
 const withdrawSeekerEarnings = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
+    /* ================= AUTH ================= */
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
+      await session.abortTransaction();
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
@@ -542,11 +604,10 @@ const withdrawSeekerEarnings = async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const seekerId = decoded._id;
 
-    console.log("🔐 Withdrawal request by seeker:", seekerId);
-
     const { amount, upiId } = req.body;
-
     const numericAmount = Number(amount);
+
+    /* ================= VALIDATION ================= */
     if (!numericAmount || numericAmount <= 0) {
       await session.abortTransaction();
       return res
@@ -554,15 +615,16 @@ const withdrawSeekerEarnings = async (req, res) => {
         .json({ success: false, message: "Invalid withdrawal amount" });
     }
 
-    if (!upiId) {
+    if (numericAmount < 1) {
       await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ success: false, message: "UPI ID is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Minimum withdrawal amount is ₹1",
+      });
     }
 
     const upiRegex = /^[a-zA-Z0-9.\-_]{2,49}@[a-zA-Z]{2,}$/;
-    if (!upiRegex.test(upiId)) {
+    if (!upiId || !upiRegex.test(upiId)) {
       await session.abortTransaction();
       return res
         .status(400)
@@ -587,129 +649,72 @@ const withdrawSeekerEarnings = async (req, res) => {
         .json({ success: false, message: "Insufficient wallet balance" });
     }
 
-    if (numericAmount < 1) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Minimum withdrawal amount is ₹1",
-      });
-    }
+    /* ================= CASHFREE PAYOUT ================= */
 
-    // -------- RazorpayX payout process --------
-    console.log("🔗 Creating RazorpayX payout for seeker:", seekerId);
-    console.log("user", user);
+    // 1️⃣ Create / verify beneficiary
+    await createCashfreeBeneficiary({
+      userId: seekerId,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      upiId,
+    });
 
-    // 1) Contact
-    const contactRes = await axios.post(
-      "https://api.razorpay.com/v1/contacts",
-      {
-        name: user.name || "Seeker User",
-        email: user.email || "noreply@example.com",
-        contact: user.phone || "9106792692",
-        type: "customer",
-      },
-      {
-        auth: {
-          username: "rzp_live_RQErm1QXjwLHM9",
-          password: "WjywpnGqjiMdvLPYhUnjQHTT",
-        },
-      }
-    );
+    // 2️⃣ Create payout transfer
+    const payoutRes = await createCashfreeUPIPayout({
+      userId: seekerId,
+      amount: numericAmount,
+    });
 
-    // 2) Fund account (UPI)
-    const fundAccountRes = await axios.post(
-      "https://api.razorpay.com/v1/fund_accounts",
-      {
-        contact_id: contactRes.data.id,
-        account_type: "vpa",
-        vpa: {
-          address: upiId,
-        },
-      },
-      {
-        auth: {
-          username: "rzp_live_RQErm1QXjwLHM9",
-          password: "WjywpnGqjiMdvLPYhUnjQHTT",
-        },
-      }
-    );
+    const payoutStatus = payoutRes.status || "PENDING";
+    const payoutTransferId = payoutRes.transferId;
 
-    // 3) Payout
-    const payoutRes = await axios.post(
-      "https://api.razorpay.com/v1/payouts",
-      {
-        account_number: "300004000017531",
-        fund_account_id: fundAccountRes.data.id,
-        amount: Math.round(numericAmount * 100),
-        currency: "INR",
-        mode: "UPI",
-        purpose: "payout",
-        queue_if_low_balance: true,
-        narration: "Seeker Wallet Withdrawal",
-      },
-      {
-        auth: {
-          username: "rzp_live_RQErm1QXjwLHM9",
-          password: "WjywpnGqjiMdvLPYhUnjQHTT",
-        },
-      }
-    );
-
-    const payout = payoutRes.data;
-    console.log("✅ RazorpayX payout created:", payout.id, payout.status);
-
-    // -------- Update wallet locally --------
+    /* ================= WALLET UPDATE ================= */
     wallet.balance -= numericAmount;
     wallet.transactions.push({
       type: "debit",
       amount: numericAmount,
-      description: `Withdrawal via RazorpayX (Payout ID: ${payout.id})`,
+      description: `Withdrawal via Cashfree (Transfer ID: ${payoutTransferId})`,
       date: new Date(),
-      status: payout.status || "processing",
-      payout_id: payout.id,
+      status: payoutStatus,
+      payout_id: payoutTransferId,
       upi_id: upiId,
     });
 
     await wallet.save({ session });
     await session.commitTransaction();
 
-    // -------- Send notification to seeker --------
+    /* ================= NOTIFICATION ================= */
     try {
       await sendNotification({
-        sender_id: seekerId, // user initiated it
-        receiver_id: seekerId, // notify same user
-        event_id: null, // no specific event; you can omit or keep null
+        sender_id: seekerId,
+        receiver_id: seekerId,
         type: "withdrawal",
         title: "Withdrawal Initiated 💸",
-        message: `Your withdrawal request of ₹${numericAmount} to UPI ID ${upiId} has been initiated. Payout ID: ${
-          payout.id
-        }. Status: ${payout.status || "processing"}.`,
+        message: `Your withdrawal of ₹${numericAmount} to UPI ID ${upiId} has been initiated. Transfer ID: ${payoutTransferId}. Status: ${payoutStatus}.`,
       });
-    } catch (notifyErr) {
-      // Don't fail the API if notification fails
-      console.error("Notification error (withdrawal):", notifyErr);
+    } catch (err) {
+      console.error("Notification error:", err);
     }
 
     return res.status(200).json({
       success: true,
       message: "Withdrawal initiated successfully",
-      payoutId: payout.id,
-      payoutStatus: payout.status,
+      payoutId: payoutTransferId,
+      payoutStatus,
       walletBalance: wallet.balance,
     });
   } catch (err) {
     await session.abortTransaction();
     console.error(
-      "Withdraw Error:",
-      err.response?.data || err.message,
-      "URL:",
-      err.response?.config?.url
+      "Cashfree Withdraw Error:",
+      err.response?.data || err.message
     );
 
     return res.status(500).json({
       success: false,
-      message: err.response?.data?.error?.description || "Withdraw failed",
-      razorpay: err.response?.data,
+      message:
+        err.response?.data?.message || "Withdrawal failed. Please try again.",
     });
   } finally {
     session.endSession();
