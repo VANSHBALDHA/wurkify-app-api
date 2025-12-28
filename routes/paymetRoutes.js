@@ -16,6 +16,8 @@ const {
 } = require("../controllers/PaymentController");
 const {
   getAdminWithdrawalList,
+  approveWithdrawal,
+  rejectWithdrawal,
 } = require("../controllers/adminWithdrawalController");
 
 router.get("/events", upload.none(), getPaymentEventList);
@@ -27,5 +29,7 @@ router.post("/seeker-earnings", upload.none(), getSeekerEarnings);
 router.post("/withdraw-earnings", upload.none(), withdrawSeekerEarnings);
 router.post("/withdrawals/request", upload.none(), requestSeekerWithdrawal);
 router.get("/admin/withdrawals", getAdminWithdrawalList);
+router.post("/admin/withdrawals/approve", approveWithdrawal);
+router.post("/admin/withdrawals/reject", rejectWithdrawal);
 
 module.exports = router;
