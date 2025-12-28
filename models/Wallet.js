@@ -1,5 +1,11 @@
 const mongoose = require("mongoose");
 
+const getISTDate = () => {
+  return new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
+};
+
 const walletSchema = new mongoose.Schema({
   seeker_id: {
     type: mongoose.Schema.Types.ObjectId,
@@ -30,7 +36,7 @@ const walletSchema = new mongoose.Schema({
       },
       date: {
         type: Date,
-        default: Date.now,
+        default: getISTDate,
       },
     },
   ],

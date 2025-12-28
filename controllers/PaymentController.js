@@ -11,6 +11,11 @@ const { organizerMessages } = require("../utils/organizerNotifications");
 
 const CASHFREE_BASE_URL = "https://payout-api.cashfree.com/payout/v1";
 
+const getISTDate = () => {
+  const now = new Date();
+  return new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+};
+
 const CASHFREE_CLIENT_ID = "CF1155859D54F4DR2M96C738CNA50";
 const CASHFREE_CLIENT_SECRET =
   "cfsk_ma_prod_95aed5aee101ffc6f9f162b48bddbaf7_59f5e4e9";
@@ -688,6 +693,109 @@ const withdrawSeekerEarnings = async (req, res) => {
   }
 };
 
+const requestSeekerWithdrawal = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      await session.abortTransaction();
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const seekerId = decoded._id;
+
+    const { amount, upiId } = req.body;
+    const withdrawAmount = Number(amount);
+
+    if (!withdrawAmount || withdrawAmount <= 0) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "Invalid withdrawal amount",
+      });
+    }
+
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,49}@[a-zA-Z]{2,}$/;
+    if (!upiId || !upiRegex.test(upiId)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "Invalid UPI ID",
+      });
+    }
+
+    const seeker = await UserAuth.findById(seekerId).session(session);
+    if (!seeker) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const wallet = await Wallet.findOne({ seeker_id: seekerId }).session(
+      session
+    );
+
+    if (!wallet || wallet.balance < withdrawAmount) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient wallet balance",
+      });
+    }
+
+    wallet.balance -= withdrawAmount;
+
+    const transaction = {
+      type: "debit",
+      amount: withdrawAmount,
+      description: "Withdrawal request submitted",
+      date: getISTDate(),
+      status: "PENDING",
+      payout_mode: "MANUAL",
+      requested_at: getISTDate(),
+    };
+
+    wallet.transactions.push(transaction);
+
+    await wallet.save({ session });
+    await session.commitTransaction();
+
+    try {
+      await sendNotification({
+        sender_id: seekerId,
+        receiver_id: seekerId,
+        type: "withdrawal",
+        title: "Withdrawal Requested ⏳",
+        message: `Your withdrawal of ₹${transaction.amount} has been submitted. You will receive it within 48–72 hours.`,
+      });
+    } catch (err) {
+      console.error("Notification error:", err);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Withdrawal request submitted successfully. You will receive your payment within 48-72 hours.",
+      balance: wallet.balance,
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    console.error("Withdrawal Request Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
 module.exports = {
   getPaymentEventList,
   getEventUserPayments,
@@ -696,4 +804,5 @@ module.exports = {
   getWalletDetails,
   getSeekerEarnings,
   withdrawSeekerEarnings,
+  requestSeekerWithdrawal,
 };
