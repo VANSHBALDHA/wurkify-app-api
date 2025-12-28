@@ -758,6 +758,7 @@ const requestSeekerWithdrawal = async (req, res) => {
       date: getISTDate(),
       status: "PENDING",
       payout_mode: "MANUAL",
+      upi_id: upiId,
       requested_at: getISTDate(),
     };
 
