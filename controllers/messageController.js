@@ -126,6 +126,7 @@ const sendMessage = async (req, res) => {
       messageType: newMessage.messageType,
       text: newMessage.text,
       audio: newMessage.audio,
+      media: newMessage.media || [],
       status: "delivered",
       createdAt: newMessage.createdAt,
       sender: {
