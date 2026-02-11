@@ -11,6 +11,7 @@ const streamifier = require("streamifier");
 const { format } = require("date-fns");
 const { seekerMessages } = require("../utils/seekerNotifications");
 const { organizerMessages } = require("../utils/organizerNotifications");
+const { Parser } = require("json2csv");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -31,18 +32,19 @@ const calculateDuration = (checkinTime, checkoutTime) => {
 const formatDateTime = (date) =>
   date ? format(new Date(date), "dd-MM-yyyy hh:mm:ss a") : null;
 
-/* =============== CHECK-IN =============== */
 const submitCheckin = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded._id;
-    const { eventId } = req.body;
+    const { eventId, lat, lng } = req.body;
 
-    if (!eventId || !req.file)
-      return res
-        .status(400)
-        .json({ success: false, message: "eventId & selfie required" });
+    if (!eventId || !req.file || !lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId, selfie & GPS location required",
+      });
+    }
 
     const event = await Event.findById(eventId);
     if (!event)
@@ -50,14 +52,15 @@ const submitCheckin = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Event not found" });
 
-    // upload selfie
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         { folder: "attendance_checkins" },
-        (err, result) => (err ? reject(err) : resolve(result))
+        (err, result) => (err ? reject(err) : resolve(result)),
       );
       streamifier.createReadStream(req.file.buffer).pipe(stream);
     });
+
+    const now = new Date();
 
     const checkin = await AttendeeCheckin.findOneAndUpdate(
       { eventId, userId },
@@ -67,17 +70,18 @@ const submitCheckin = async (req, res) => {
             checkinSelfie: result.secure_url,
             checkinTime: new Date(),
             checkinStatus: "pending",
+            attendanceDate: now,
+            checkinLocation: { lat, lng },
           },
         },
       },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
-    // notify organizer – can use attendanceCheckin template if you have seeker name
     const seekerName = decoded.name || "An attendee";
     const orgTemplate = organizerMessages.attendanceCheckin(
       event.eventName,
-      seekerName
+      seekerName,
     );
 
     await sendNotification({
@@ -89,7 +93,6 @@ const submitCheckin = async (req, res) => {
       message: orgTemplate.message,
     });
 
-    // notify seeker – attendance verification flow
     const seekerTemplate = seekerMessages.checkinSubmitted(event.eventName);
 
     await sendNotification({
@@ -112,18 +115,19 @@ const submitCheckin = async (req, res) => {
   }
 };
 
-/* =============== CHECK-OUT =============== */
 const submitCheckout = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET);
     const userId = decoded._id;
-    const { eventId } = req.body;
+    const { eventId, lat, lng } = req.body;
 
-    if (!eventId || !req.file)
-      return res
-        .status(400)
-        .json({ success: false, message: "eventId & selfie required" });
+    if (!eventId || !req.file || !lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId, selfie & GPS location required",
+      });
+    }
 
     const record = await AttendeeCheckin.findOne({ eventId, userId });
     if (!record || !record.sessions.length)
@@ -146,19 +150,24 @@ const submitCheckout = async (req, res) => {
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         { folder: "attendance_checkouts" },
-        (err, result) => (err ? reject(err) : resolve(result))
+        (err, result) => (err ? reject(err) : resolve(result)),
       );
       streamifier.createReadStream(req.file.buffer).pipe(stream);
     });
 
+    const checkoutTime = new Date();
+    const diffMinutes = (checkoutTime - new Date(last.checkinTime)) / 60000;
+
     last.checkoutSelfie = result.secure_url;
-    last.checkoutTime = new Date();
+    last.checkoutTime = checkoutTime;
+    last.checkoutLocation = { lat, lng };
     last.checkoutStatus = "pending";
+    last.durationMinutes = Math.round(diffMinutes);
+
     await record.save();
 
     const event = await Event.findById(eventId);
 
-    // organizer – you can keep the custom text or add an organizer template later
     await sendNotification({
       sender_id: userId,
       receiver_id: event.organizer_id,
@@ -170,7 +179,6 @@ const submitCheckout = async (req, res) => {
       }" awaiting your approval.`,
     });
 
-    // seeker – use template
     const seekerTemplate = seekerMessages.checkoutSubmitted(event.eventName);
 
     await sendNotification({
@@ -193,7 +201,6 @@ const submitCheckout = async (req, res) => {
   }
 };
 
-/* =============== GET MY STATUS =============== */
 const getMyAttendanceStatus = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -226,7 +233,6 @@ const getMyAttendanceStatus = async (req, res) => {
   }
 };
 
-/* =============== ORGANIZER: PENDING LIST =============== */
 const getPendingAttendance = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -245,7 +251,7 @@ const getPendingAttendance = async (req, res) => {
 
     const records = await AttendeeCheckin.find({ eventId }).populate(
       "userId",
-      "name email"
+      "name email",
     );
 
     const pending = [];
@@ -283,7 +289,6 @@ const getPendingAttendance = async (req, res) => {
   }
 };
 
-/* =============== APPROVE / REJECT =============== */
 const updateAttendanceStatus = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -293,7 +298,7 @@ const updateAttendanceStatus = async (req, res) => {
     const record = await AttendeeCheckin.findOneAndUpdate(
       { _id: recordId, "sessions._id": sessionId },
       { $set: { [`sessions.$.${type}Status`]: status } },
-      { new: true }
+      { new: true },
     ).populate("userId", "name email");
 
     if (!record)
@@ -337,7 +342,6 @@ const updateAttendanceStatus = async (req, res) => {
   }
 };
 
-/* =============== SEEKER: ACCEPTED EVENTS =============== */
 const getAcceptedEventList = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -363,7 +367,6 @@ const getAcceptedEventList = async (req, res) => {
   }
 };
 
-/* =============== SEEKER: MY TIMESHEET =============== */
 const getMyTimesheet = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -458,6 +461,110 @@ const getMyTimesheet = async (req, res) => {
   }
 };
 
+const exportAttendance = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const organizerId = decoded._id;
+    const { eventId } = req.body;
+
+    if (!eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId is required",
+      });
+    }
+
+    const event = await Event.findOne({
+      _id: eventId,
+      organizer_id: organizerId,
+    });
+
+    if (!event) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    const records = await AttendeeCheckin.find({ eventId }).populate(
+      "userId",
+      "name email",
+    );
+
+    const rows = [];
+
+    records.forEach((r) => {
+      r.sessions.forEach((s) => {
+        const duration = calculateDuration(s.checkinTime, s.checkoutTime);
+
+        rows.push({
+          Event: event.eventName,
+          Name: r.userId.name,
+          Email: r.userId.email,
+          "Check-in Time": formatDateTime(s.checkinTime),
+          "Check-out Time": formatDateTime(s.checkoutTime),
+          "Check-in Status": s.checkinStatus,
+          "Check-out Status": s.checkoutStatus,
+          "Total Minutes": duration?.totalMinutes || 0,
+        });
+      });
+    });
+
+    const parser = new Parser();
+    const csv = parser.parse(rows);
+
+    res.header("Content-Type", "text/csv");
+    res.header(
+      "Content-Disposition",
+      `attachment; filename=attendance_${eventId}.csv`,
+    );
+
+    return res.send(csv);
+  } catch (err) {
+    console.error("Export Attendance Error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+const submitAttendanceReport = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const { recordId, sessionId, message } = req.body;
+
+    if (!message)
+      return res
+        .status(400)
+        .json({ success: false, message: "Report message required" });
+
+    const record = await AttendeeCheckin.findOneAndUpdate(
+      { _id: recordId, "sessions._id": sessionId },
+      {
+        $set: {
+          "sessions.$.report": {
+            message,
+            createdAt: new Date(),
+          },
+        },
+      },
+      { new: true },
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Report submitted successfully",
+    });
+  } catch (err) {
+    console.error("Submit Report Error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 module.exports = {
   submitCheckin,
   submitCheckout,
@@ -466,4 +573,6 @@ module.exports = {
   updateAttendanceStatus,
   getAcceptedEventList,
   getMyTimesheet,
+  exportAttendance,
+  submitAttendanceReport,
 };

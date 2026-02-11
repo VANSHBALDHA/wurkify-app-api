@@ -25,7 +25,7 @@ const formatDMY = (value) => {
   let d;
   if (value instanceof Date) {
     d = new Date(
-      Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())
+      Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()),
     );
   } else if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [y, m, day] = value.split("-").map(Number);
@@ -34,7 +34,7 @@ const formatDMY = (value) => {
     const parsed = new Date(value);
     if (isNaN(parsed)) return null;
     d = new Date(
-      Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+      Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()),
     );
   }
 
@@ -42,6 +42,11 @@ const formatDMY = (value) => {
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
   const year = d.getUTCFullYear();
   return `${day}-${month}-${year}`;
+};
+
+const applyCommission = (amount, commissionPercent = 5) => {
+  if (!amount) return 0;
+  return Number(((amount * (100 - commissionPercent)) / 100).toFixed(2));
 };
 
 const getEventList = async (req, res) => {
@@ -90,7 +95,7 @@ const getEventList = async (req, res) => {
           missingStatus.map((e) => {
             e.eventStatus = "pending";
             return e.save();
-          })
+          }),
         );
       }
 
@@ -102,14 +107,14 @@ const getEventList = async (req, res) => {
       ]);
 
       const appCountMap = new Map(
-        applications.map((a) => [a._id.toString(), a.count])
+        applications.map((a) => [a._id.toString(), a.count]),
       );
 
       const formattedEvents = await Promise.all(
         events.map(async (event) => {
           const organizerProfile = await UserProfile.findOne(
             { userId: event.organizer_id },
-            "profile_img"
+            "profile_img",
           );
 
           return {
@@ -123,7 +128,9 @@ const getEventList = async (req, res) => {
             dailyEndTime: event.dailyEndTime,
             dressCode: event.dressCode,
             dressCodeDescription: event.dressCodeDescription,
-            paymentAmount: event.paymentAmount,
+            paymentAmount: applyCommission(event.paymentAmount),
+            originalPaymentAmount: event.paymentAmount,
+            commissionPercent: 5,
             paymentClearanceDays: event.paymentClearanceDays,
             workDescription: event.workDescription,
             location: event.location,
@@ -139,7 +146,7 @@ const getEventList = async (req, res) => {
             mapLink: event.mapLink || null,
             typeOfPeople: event.typeOfPeople,
           };
-        })
+        }),
       );
 
       return res.status(200).json({
@@ -180,7 +187,7 @@ const getEventList = async (req, res) => {
           missingStatus.map((e) => {
             e.eventStatus = "pending";
             return e.save();
-          })
+          }),
         );
       }
 
@@ -192,7 +199,7 @@ const getEventList = async (req, res) => {
       ]);
 
       const appCountMap = new Map(
-        appCounts.map((a) => [a._id.toString(), a.count])
+        appCounts.map((a) => [a._id.toString(), a.count]),
       );
 
       const formattedEvents = await Promise.all(
@@ -201,7 +208,7 @@ const getEventList = async (req, res) => {
           const appliedStatus = applicationMap.get(eventId);
           const organizerProfile = await UserProfile.findOne(
             { userId: event.organizer_id },
-            "profile_img"
+            "profile_img",
           );
 
           return {
@@ -215,7 +222,9 @@ const getEventList = async (req, res) => {
             dailyEndTime: event.dailyEndTime,
             dressCode: event.dressCode,
             dressCodeDescription: event.dressCodeDescription,
-            paymentAmount: event.paymentAmount,
+            paymentAmount: applyCommission(event.paymentAmount),
+            originalPaymentAmount: event.paymentAmount, // optional (for transparency)
+            commissionPercent: 5, // optional
             paymentClearanceDays: event.paymentClearanceDays,
             workDescription: event.workDescription,
             location: event.location,
@@ -230,13 +239,14 @@ const getEventList = async (req, res) => {
             alreadyApplied: applicationMap.has(eventId),
             applicationStatus: appliedStatus || null,
             appliedCount: appCountMap.get(eventId) || 0,
+            typeOfPeople: event.typeOfPeople,
           };
-        })
+        }),
       );
 
       const filteredEvents = applicationStatus
         ? formattedEvents.filter(
-            (event) => event.applicationStatus === applicationStatus
+            (event) => event.applicationStatus === applicationStatus,
           )
         : formattedEvents;
 
@@ -333,7 +343,9 @@ const getEventById = async (req, res) => {
         dailyEndTime: event.dailyEndTime,
         dressCode: event.dressCode,
         dressCodeDescription: event.dressCodeDescription,
-        paymentAmount: event.paymentAmount,
+        paymentAmount: applyCommission(event.paymentAmount),
+        originalPaymentAmount: event.paymentAmount, // optional (for transparency)
+        commissionPercent: 5, // optional
         paymentClearanceDays: event.paymentClearanceDays,
         workDescription: event.workDescription,
         location: event.location,
@@ -495,7 +507,7 @@ const createEvent = async (req, res) => {
       additionalNotes,
       eventStatus: "pending",
       numberOfDays: Math.floor(
-        (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24)
+        (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24),
       ),
       ...(mapLink && { mapLink }),
       ...(typeOfPeople && { typeOfPeople }),
@@ -615,7 +627,7 @@ const editEvent = async (req, res) => {
     }
 
     const numberOfDays = Math.floor(
-      (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24)
+      (parsedEndDate - parsedStartDate) / (1000 * 60 * 60 * 24),
     );
 
     let computedPaymentClearanceDays = 0;
@@ -684,7 +696,7 @@ const editEvent = async (req, res) => {
     const updatedEvent = await Event.findOneAndUpdate(
       { _id: eventId, organizer_id: userId },
       { $set: updateData },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedEvent) {
@@ -774,7 +786,7 @@ const updateEventStatus = async (req, res) => {
       const totalApplications = applications.length;
       const paidApplications = applications.filter(
         (app) =>
-          app.paymentStatus === "completed" || app.paymentStatus === "credited"
+          app.paymentStatus === "completed" || app.paymentStatus === "credited",
       ).length;
 
       if (paidApplications < totalApplications) {
@@ -799,7 +811,7 @@ const updateEventStatus = async (req, res) => {
       }
 
       const acceptedApps = applications.filter(
-        (a) => a.applicationStatus === "accepted"
+        (a) => a.applicationStatus === "accepted",
       );
       for (const app of acceptedApps) {
         await sendNotification({
@@ -823,7 +835,7 @@ const updateEventStatus = async (req, res) => {
     const updatedEvent = await Event.findOneAndUpdate(
       { _id: eventId, organizer_id: organizerId },
       { eventStatus: status },
-      { new: true }
+      { new: true },
     );
 
     return res.status(200).json({
@@ -936,7 +948,7 @@ const applyToEvent = async (req, res) => {
     const seekerProfile = await UserProfile.findOne({ userId: seekerId });
     const { isComplete, missingFields } = checkProfileCompletion(
       seeker,
-      seekerProfile
+      seekerProfile,
     );
 
     if (!isComplete) {
@@ -1048,14 +1060,14 @@ const getApplicantsByEvent = async (req, res) => {
 
     const applications = await EventApplication.find(query).populate(
       "seeker_id",
-      "name email phone gender birthdate role"
+      "name email phone gender birthdate role",
     );
 
     const applicants = await Promise.all(
       applications.map(async (app) => {
         const seekerProfile = await UserProfile.findOne(
           { userId: app.seeker_id._id },
-          "profile_img"
+          "profile_img",
         );
 
         return {
@@ -1070,7 +1082,7 @@ const getApplicantsByEvent = async (req, res) => {
           updatedStatus: app.applicationStatus || "pending",
           profile_img: seekerProfile ? seekerProfile.profile_img : null, // ✅ add profile image
         };
-      })
+      }),
     );
 
     return res.status(200).json({
@@ -1149,7 +1161,7 @@ const updateApplicationStatus = async (req, res) => {
     const application = await EventApplication.findOneAndUpdate(
       { seeker_id: applicationId, event_id: eventId },
       { applicationStatus: status },
-      { new: true }
+      { new: true },
     ).populate("seeker_id", "name email");
 
     if (!application) {
@@ -1176,7 +1188,7 @@ const updateApplicationStatus = async (req, res) => {
 
       if (global.onlineUsers instanceof Map) {
         const applicantSocket = global.onlineUsers.get(
-          applicationId.toString()
+          applicationId.toString(),
         );
         if (applicantSocket) {
           global.io.to(applicantSocket).emit("notification", {
@@ -1193,7 +1205,7 @@ const updateApplicationStatus = async (req, res) => {
       const group = await Group.findOne({ event_id: eventId });
       if (group && group.members.includes(applicationId)) {
         group.members = group.members.filter(
-          (memberId) => memberId.toString() !== applicationId.toString()
+          (memberId) => memberId.toString() !== applicationId.toString(),
         );
         await group.save();
 
@@ -1208,7 +1220,7 @@ const updateApplicationStatus = async (req, res) => {
         });
 
         console.log(
-          `🚫 Seeker ${applicationId} removed from group for event ${event.eventName}`
+          `🚫 Seeker ${applicationId} removed from group for event ${event.eventName}`,
         );
       }
     }
@@ -1220,7 +1232,7 @@ const updateApplicationStatus = async (req, res) => {
     if (status === "accepted") {
       const { title, message } = organizerMessages.acceptApplicant(
         event.eventName,
-        seekerName
+        seekerName,
       );
       await sendNotification({
         sender_id: organizerId,
@@ -1244,7 +1256,7 @@ const updateApplicationStatus = async (req, res) => {
     } else if (status === "rejected") {
       const { title, message } = organizerMessages.rejectApplicant(
         event.eventName,
-        seekerName
+        seekerName,
       );
       await sendNotification({
         sender_id: organizerId,
@@ -1419,7 +1431,7 @@ const getSeekerTotalEarnings = async (req, res) => {
     // ✅ Calculate total earnings
     const totalEarnings = events.reduce(
       (sum, e) => sum + (e.paymentAmount || 0),
-      0
+      0,
     );
 
     return res.status(200).json({

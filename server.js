@@ -8,22 +8,28 @@ const cookieParser = require("cookie-parser");
 const serverless = require("serverless-http");
 const http = require("http");
 const { Server } = require("socket.io");
-const Message = require("./models/Message");
-const admin = require("./firebase");
-const UserProfile = require("./models/UserProfile");
+const jwt = require("jsonwebtoken");
 
 dotenv.config();
 connectDB();
 
+const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
+
 const app = express();
 
-var corsOptions = {
+const corsOptions = {
   origin: "*",
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
+app.use(cors(corsOptions));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -33,115 +39,105 @@ const io = new Server(server, {
   pingInterval: 25000,
 });
 
-let onlineUsers = new Map();
+io.use((socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.split(" ")[1];
 
-// ================== SOCKET.IO ==================
+    if (!token) {
+      return next(new Error("Unauthorized"));
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    socket.user = decoded;
+    next();
+  } catch (err) {
+    next(new Error("Invalid token"));
+  }
+});
+
 io.on("connection", (socket) => {
-  socket.on("ping", () => {
-    socket.emit("pong");
+  const userId = socket.user._id.toString();
+
+  console.log(`🔌 Socket connected: ${userId}`);
+
+  socket.join(userId);
+
+  socket.on("join-group", (groupId) => {
+    if (!groupId) return;
+    socket.join(groupId);
+    console.log(`👥 ${userId} joined group ${groupId}`);
   });
 
-  socket.on("test", () => {
-    console.log("📩 Test event received from:", socket.id);
-    socket.emit("test-response", {
-      message: "Test successful!",
-      socketId: socket.id,
+  socket.on("leave-group", (groupId) => {
+    socket.leave(groupId);
+    console.log(`🚪 ${userId} left group ${groupId}`);
+  });
+
+  // Caller initiates audio call
+  socket.on("audio-call-initiate", ({ to }) => {
+    console.log(`📞 Audio call from ${userId} to ${to}`);
+    io.to(to).emit("incoming-audio-call", {
+      from: userId,
     });
   });
 
-  socket.on("join", (userId) => {
-    try {
-      if (!userId) throw new Error("User ID is required");
-      const userIdStr = userId.toString();
-      onlineUsers.set(userIdStr, socket.id);
-      socket.emit("join-success", { userId: userIdStr, socketId: socket.id });
-    } catch (error) {
-      console.error("❌ Error in join event:", error);
-      socket.emit("join-error", { error: error.message });
-    }
+  socket.on("audio-call-accept", ({ to }) => {
+    console.log(`✅ Call accepted by ${userId}`);
+    io.to(to).emit("audio-call-accepted", {
+      from: userId,
+    });
   });
 
-  socket.on("join-group", (groupId) => {
-    socket.join(groupId);
+  socket.on("audio-call-reject", ({ to }) => {
+    console.log(`❌ Call rejected by ${userId}`);
+    io.to(to).emit("audio-call-rejected", {
+      from: userId,
+    });
   });
 
-  // 🔔 Unified message broadcasting hook
-  socket.on("broadcast-message", async (message) => {
-    try {
-      // 1. Emit to group via sockets
-      io.to(message.groupId).emit("new-message", message);
+  socket.on("webrtc-offer", ({ to, offer }) => {
+    io.to(to).emit("webrtc-offer", {
+      from: userId,
+      offer,
+    });
+  });
 
-      // 2. Send Firebase push to group members (except sender)
-      const group = await require("./models/Group")
-        .findById(message.groupId)
-        .lean();
-      if (!group) return;
+  // WebRTC Answer
+  socket.on("webrtc-answer", ({ to, answer }) => {
+    io.to(to).emit("webrtc-answer", {
+      from: userId,
+      answer,
+    });
+  });
 
-      const senderProfile = await UserProfile.findOne(
-        { userId: message.sender._id },
-        "profile_img"
-      ).lean();
+  // ICE Candidates
+  socket.on("webrtc-ice-candidate", ({ to, candidate }) => {
+    io.to(to).emit("webrtc-ice-candidate", {
+      from: userId,
+      candidate,
+    });
+  });
 
-      // Get all group members except sender
-      const targetUserIds = group.members
-        .map((m) => m.toString())
-        .filter((id) => id !== message.sender._id.toString());
-
-      // Fetch FCM tokens for target users
-      const tokens = await require("./models/AuthUsers")
-        .find(
-          { _id: { $in: targetUserIds }, fcmToken: { $exists: true, $ne: "" } },
-          "fcmToken"
-        )
-        .lean();
-
-      const fcmTokens = tokens.map((t) => t.fcmToken);
-
-      if (fcmTokens.length > 0) {
-        await admin.messaging().sendMulticast({
-          tokens: fcmTokens,
-          notification: {
-            title: message.sender.name,
-            body:
-              message.text ||
-              (message.media?.length ? "📎 Media" : "New Message"),
-            imageUrl: senderProfile?.profile_img || undefined,
-          },
-          data: {
-            groupId: message.groupId,
-            senderId: message.sender._id.toString(),
-            type: "chat",
-          },
-        });
-      }
-    } catch (err) {
-      console.error("❌ Error in broadcast-message handler:", err);
-    }
+  // Call ended
+  socket.on("audio-call-ended", ({ to }) => {
+    console.log(`📴 Call ended by ${userId}`);
+    io.to(to).emit("audio-call-ended", {
+      from: userId,
+    });
   });
 
   socket.on("disconnect", (reason) => {
-    for (let [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        break;
-      }
-    }
-    console.log(`🔌 Socket disconnected: ${socket.id} (${reason})`);
+    console.log(`❌ Socket disconnected: ${userId} (${reason})`);
   });
 
   socket.on("error", (err) => {
-    console.error(`❌ Socket error on ${socket.id}:`, err);
+    console.error(`❌ Socket error (${userId}):`, err);
   });
 });
 
-// Export for other modules
 module.exports.io = io;
-module.exports.onlineUsers = onlineUsers;
-
-// ================== APP MIDDLEWARE ==================
-app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 const cache = new NodeCache();
 
@@ -150,7 +146,6 @@ app.delete("/api/cache/clear", (req, res) => {
   res.status(200).json({ message: "Cache cleared successfully!" });
 });
 
-// ================== ROUTES ==================
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/profile", require("./routes/profileRoutes"));
 app.use("/api/feedback", require("./routes/feedbackRoutes"));
@@ -162,11 +157,9 @@ app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api", require("./routes/usersearch"));
 app.use("/api/referral", require("./routes/referralRoutes"));
 
-app.use(cookieParser());
 app.use(errorMiddleware);
 
 const handler = serverless(app);
-
 module.exports = app;
 module.exports.handler = handler;
 

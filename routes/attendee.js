@@ -13,6 +13,8 @@ const {
   updateAttendanceStatus,
   getAcceptedEventList,
   getMyTimesheet,
+  exportAttendance,
+  submitAttendanceReport
 } = require("../controllers/AttendeeController");
 
 router.post("/checkin", upload.single("checkinSelfie"), submitCheckin);
@@ -22,5 +24,7 @@ router.post("/pending", upload.none(), getPendingAttendance);
 router.post("/update-status", upload.none(), updateAttendanceStatus);
 router.get("/accepted-events", upload.none(), getAcceptedEventList);
 router.post("/my-timesheet", upload.none(), getMyTimesheet);
+router.post("/export", upload.none(), exportAttendance);
+router.post("/submit-report", upload.none(), submitAttendanceReport);
 
 module.exports = router;

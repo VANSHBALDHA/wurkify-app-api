@@ -7,6 +7,8 @@ const { io } = require("../server");
 const admin = require("../firebase");
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
+const { Parser } = require("json2csv");
+const { format } = require("date-fns");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -48,7 +50,7 @@ const sendMessage = async (req, res) => {
           new Promise((resolve, reject) => {
             const stream = cloudinary.uploader.upload_stream(
               { folder: "group_messages", resource_type: "auto" },
-              (error, result) => (result ? resolve(result) : reject(error))
+              (error, result) => (result ? resolve(result) : reject(error)),
             );
             streamifier.createReadStream(file.buffer).pipe(stream);
           });
@@ -75,7 +77,7 @@ const sendMessage = async (req, res) => {
               folder: "group_messages",
               resource_type: "auto",
             },
-            (error, result) => (result ? resolve(result) : reject(error))
+            (error, result) => (result ? resolve(result) : reject(error)),
           );
 
           streamifier.createReadStream(file.buffer).pipe(stream);
@@ -116,7 +118,7 @@ const sendMessage = async (req, res) => {
     const sender = await UserAuth.findById(userId, "name email role").lean();
     const senderProfile = await UserProfile.findOne(
       { userId },
-      "profile_img fcm_token"
+      "profile_img fcm_token",
     ).lean();
 
     console.log("senderProfile", senderProfile);
@@ -143,7 +145,7 @@ const sendMessage = async (req, res) => {
 
       const memberProfile = await UserProfile.findOne(
         { userId: memberId },
-        "fcm_token"
+        "fcm_token",
       ).lean();
 
       if (memberProfile?.fcm_token) {
@@ -209,7 +211,7 @@ const getMessages = async (req, res) => {
 
     const profiles = await UserProfile.find(
       { userId: { $in: senderIds } },
-      "userId profile_img"
+      "userId profile_img",
     ).lean();
 
     const profileMap = {};
@@ -265,13 +267,13 @@ const getUserGroups = async (req, res) => {
     for (let group of groups) {
       const organizerProfile = await UserProfile.findOne(
         { userId: group.organizer_id._id },
-        "profile_img"
+        "profile_img",
       );
       group.organizer_id.profile_img = organizerProfile?.profile_img || "";
 
       const membersProfiles = await UserProfile.find(
         { userId: { $in: group.members.map((m) => m._id) } },
-        "userId profile_img"
+        "userId profile_img",
       );
 
       const profileMap = {};
@@ -332,7 +334,7 @@ const getEventGroupMembers = async (req, res) => {
 
     const memberProfiles = await UserProfile.find(
       { userId: { $in: group.members.map((m) => m._id) } },
-      "userId profile_img"
+      "userId profile_img",
     );
 
     const profileMap = {};
@@ -356,9 +358,80 @@ const getEventGroupMembers = async (req, res) => {
   }
 };
 
+const exportGroupChat = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded._id;
+    const { groupId } = req.body;
+
+    if (!groupId) {
+      return res.status(400).json({
+        success: false,
+        message: "groupId is required",
+      });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: "Group not found",
+      });
+    }
+
+    if (!group.members.some((m) => m.toString() === userId.toString())) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to export this chat",
+      });
+    }
+
+    const messages = await Message.find({ group_id: groupId })
+      .populate("sender_id", "name email")
+      .sort({ createdAt: 1 })
+      .lean();
+
+    const rows = messages.map((m) => ({
+      Sender: m.sender_id?.name || "Unknown",
+      Email: m.sender_id?.email || "",
+      Type: m.messageType,
+      Message:
+        m.messageType === "text"
+          ? m.text
+          : m.messageType === "audio"
+            ? m.audio?.url
+            : m.media?.map((x) => x.url).join(", "),
+      "Sent At": format(new Date(m.createdAt), "dd-MM-yyyy hh:mm:ss a"),
+    }));
+
+    const parser = new Parser();
+    const csv = parser.parse(rows);
+
+    res.header("Content-Type", "text/csv");
+    res.header(
+      "Content-Disposition",
+      `attachment; filename=group_chat_${groupId}.csv`,
+    );
+
+    return res.send(csv);
+  } catch (err) {
+    console.error("Export Group Chat Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
   getUserGroups,
   getEventGroupMembers,
+  exportGroupChat
 };

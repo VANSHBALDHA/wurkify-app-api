@@ -482,7 +482,7 @@ const getSeekerEarnings = async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const seekerId = decoded._id;
 
-    // Fetch wallet
+
     const wallet = await Wallet.findOne({ seeker_id: seekerId }).populate(
       "transactions.event_id",
       "eventName"

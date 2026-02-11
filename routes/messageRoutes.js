@@ -7,12 +7,14 @@ const {
   sendMessage,
   getMessages,
   getUserGroups,
-  getEventGroupMembers
+  getEventGroupMembers,
+  exportGroupChat,
 } = require("../controllers/messageController");
 
 router.post("/send", upload.array("files", 10), sendMessage);
 router.post("/", upload.none(), getMessages);
 router.get("/groups", upload.none(), getUserGroups);
 router.post("/members", upload.none(), getEventGroupMembers);
+router.post("/export", upload.none(), exportGroupChat);
 
 module.exports = router;
