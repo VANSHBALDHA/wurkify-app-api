@@ -344,8 +344,8 @@ const getEventById = async (req, res) => {
         dressCode: event.dressCode,
         dressCodeDescription: event.dressCodeDescription,
         paymentAmount: applyCommission(event.paymentAmount),
-        originalPaymentAmount: event.paymentAmount, // optional (for transparency)
-        commissionPercent: 5, // optional
+        originalPaymentAmount: event.paymentAmount,
+        commissionPercent: 5,
         paymentClearanceDays: event.paymentClearanceDays,
         workDescription: event.workDescription,
         location: event.location,
@@ -1342,19 +1342,35 @@ const getSeekerEvents = async (req, res) => {
       });
     }
 
-    // Format response
-    const formatted = applications.map((app) => ({
-      event_id: app.event_id?._id,
-      eventName: app.event_id?.eventName,
-      location: app.event_id?.location,
-      startDate: app.event_id?.startDate,
-      endDate: app.event_id?.endDate,
-      paymentAmount: app.event_id?.paymentAmount,
-      eventStatus: app.event_id?.eventStatus,
-      applicationStatus: app.applicationStatus || "pending",
-      paymentStatus: app.paymentStatus || "unpaid",
-      appliedAt: app.createdAt,
-    }));
+    // Format response with organizer images
+    const formatted = await Promise.all(
+      applications.map(async (app) => {
+        // Get organizer profile image if event exists
+        let organizerImg = null;
+        if (app.event_id && app.event_id.organizer_id) {
+          const organizerProfile = await UserProfile.findOne(
+            { userId: app.event_id.organizer_id },
+            "profile_img",
+          );
+          organizerImg = organizerProfile ? organizerProfile.profile_img : null;
+        }
+
+        return {
+          event_id: app.event_id?._id,
+          eventName: app.event_id?.eventName,
+          location: app.event_id?.location,
+          startDate: app.event_id?.startDate,
+          endDate: app.event_id?.endDate,
+          paymentAmount: app.event_id?.paymentAmount,
+          eventStatus: app.event_id?.eventStatus,
+          applicationStatus: app.applicationStatus || "pending",
+          paymentStatus: app.paymentStatus || "unpaid",
+          appliedAt: app.createdAt,
+          organizer_name: app.event_id?.organizer_name,
+          organizerImg: organizerImg, // Added organizer image
+        };
+      }),
+    );
 
     return res.status(200).json({
       success: true,

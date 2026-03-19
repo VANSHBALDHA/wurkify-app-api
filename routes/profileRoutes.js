@@ -13,6 +13,9 @@ const {
 } = require("../controllers/profileController");
 const UserProfile = require("../models/UserProfile");
 const jwt = require("jsonwebtoken");
+const {
+  checkOrganizerProfileCompletion,
+} = require("../controllers/Organizerprofilecontroller");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 
@@ -23,7 +26,7 @@ router.post(
     { name: "profile_img", maxCount: 1 },
     { name: "photos", maxCount: 10 },
   ]),
-  upsertProfile
+  upsertProfile,
 );
 router.post("/social-links", upload.none(), updateSocialLinks);
 router.post(
@@ -32,7 +35,7 @@ router.post(
     { name: "aadharImage", maxCount: 1 },
     { name: "panImage", maxCount: 1 },
   ]),
-  upsertDocumentation
+  upsertDocumentation,
 );
 router.post("/bank-details", upload.none(), upsertBankDetails);
 router.post("/work-experience", upload.none(), upsertWorkExperience);
@@ -79,7 +82,7 @@ router.post("/save-token", upload.none(), async (req, res) => {
     const updatedProfile = await UserProfile.findOneAndUpdate(
       { userId },
       { fcm_token },
-      { new: true, upsert: true, runValidators: true }
+      { new: true, upsert: true, runValidators: true },
     );
 
     return res.status(200).json({
@@ -95,5 +98,7 @@ router.post("/save-token", upload.none(), async (req, res) => {
     });
   }
 });
+
+router.get("/completion", checkOrganizerProfileCompletion);
 
 module.exports = router;
