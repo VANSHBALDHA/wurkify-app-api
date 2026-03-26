@@ -50,7 +50,7 @@ router.post("/save-token", upload.none(), async (req, res) => {
       });
     }
 
-    const token = authHeader.split(" ")[1];
+ const token = authHeader.split(" ")[1];
     let decoded;
     try {
       decoded = jwt.verify(token, JWT_SECRET);

@@ -16,6 +16,7 @@ const {
   googleLogin,
 } = require("../controllers/AuthController");
 
+// Add this route in your routes file
 router.post("/register", upload.none(), registerUser);
 router.post("/verify-otp", upload.none(), verifyOtp);
 router.post("/login", upload.none(), userLogin);
@@ -26,5 +27,4 @@ router.delete("/delete-account", upload.none(), deleteAccount);
 router.post("/change-password", upload.none(), changePin);
 router.post("/reset-otp", upload.none(), resetOtp);
 router.post("/google-login", upload.none(), googleLogin);
-
 module.exports = router;

@@ -4,5 +4,4 @@ const config = {
     emailPassword: "wrexrjgythzzjvtt",
   };
   
-  module.exports = config;
-  
+module.exports = config;

@@ -146,6 +146,8 @@ app.delete("/api/cache/clear", (req, res) => {
   res.status(200).json({ message: "Cache cleared successfully!" });
 });
 
+
+
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/profile", require("./routes/profileRoutes"));
 app.use("/api/feedback", require("./routes/feedbackRoutes"));
@@ -164,9 +166,15 @@ module.exports = app;
 module.exports.handler = handler;
 
 if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
+  const PORT = process.env.PORT || 5007;
   server.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
     console.log(`🔌 Socket.IO ready`);
   });
 }
+
+app.get("/", (req, res) => {
+  res.send("Server is running ✅");
+});
+
+

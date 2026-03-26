@@ -4,8 +4,13 @@ const jwt = require("jsonwebtoken");
 const axios = require("axios");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
-const REFERRAL_APP_LINK =
-  process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
+// const REFERRAL_APP_LINK =
+//   process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
+
+// const REFERRAL_APP_LINK="https://wurkify.page.link/join?ref="
+
+const REFERRAL_APP_LINK="https://play.google.com/store/apps/details?id=com.app.wurkify&referrer="
+
 
 const RAZORPAY_KEY_ID = "rzp_live_RQErm1QXjwLHM9";
 const RAZORPAY_KEY_SECRET = "WjywpnGqjiMdvLPYhUnjQHTT";
@@ -82,7 +87,14 @@ const getReferralSummary = async (req, res) => {
     const isEligibleForWithdrawal = totalAvailable >= minWithdrawal;
 
     // ✅ Generate referral link
-    const appLink = `${REFERRAL_APP_LINK}?ref=${user.referralCode}`;
+    // const appLink = `${REFERRAL_APP_LINK}?ref=${user.referralCode}`;
+
+    // In your referral controller (not in auth file)
+
+    console.log("user" ,user)
+const appLink = user.referralCode 
+  ? `${REFERRAL_APP_LINK}?ref=${user.referralCode}`
+  : REFERRAL_APP_LINK; // Fallback to base URL
 
     // ✅ Combine cashback + referral bonuses in ONE array
     const referrals = [];

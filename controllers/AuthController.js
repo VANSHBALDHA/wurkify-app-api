@@ -54,6 +54,54 @@ const sendOtpEmail = async (to, otp) => {
   await transporter.sendMail(mailOptions);
 };
 
+// const sendOtpEmail = async (to, otp) => {
+//   const transporter = nodemailer.createTransport({
+//     host: "smtp.gmail.com",
+//     port: 587,
+//     secure: false,
+//     requireTLS: true,
+//     auth: {
+//       user: config.emailUser,
+//       pass: config.emailPassword,
+//     },
+//     tls: {
+//       rejectUnauthorized: false,
+//     },
+//   });
+
+//   // Verify connection configuration
+//   try {
+//     await transporter.verify();
+//     console.log("✅ Email transporter verified successfully");
+//   } catch (verifyError) {
+//     console.error("❌ Email transporter verification failed:", verifyError.message);
+//     throw verifyError;
+//   }
+
+//   const mailOptions = {
+//     from: `"Wurkify App" <${config.emailUser}>`,
+//     to: to,
+//     subject: "Verify Your Email - Wurkify",
+//     html: `
+//       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+//         <h2 style="color: #4CAF50;">Welcome to Wurkify!</h2>
+//         <p>Hi there,</p>
+//         <p>Thank you for signing up. Please use the following One Time Password (OTP) to verify your email address:</p>
+//         <p style="font-size: 24px; font-weight: bold; color: #333; text-align: center; margin: 20px 0;">
+//           ${otp}
+//         </p>
+//         <p>This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+//         <p>Best regards,<br/>The Wurkify Team</p>
+//         <hr/>
+//         <p style="font-size: 12px; color: #999;">If you have any questions, contact us at support@wurkify.com</p>
+//       </div>
+//     `,
+//   };
+
+//   const info = await transporter.sendMail(mailOptions);
+//   console.log("✅ Email sent successfully! Message ID:", info.messageId);
+//   return info;
+// };
 const sendResetOtpEmail = async (to, otp) => {
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
@@ -87,6 +135,278 @@ const sendResetOtpEmail = async (to, otp) => {
   await transporter.sendMail(mailOptions);
 };
 
+// const registerUser = async (req, res) => {
+//   try {
+//     const {
+//       name,
+//       email,
+//       password,
+//       phone,
+//       birthdate,
+//       gender,
+//       role,
+//       referralCode,
+//     } = req.body;
+
+//     if (!name || !email || !password) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Name, email, and password are required",
+//       });
+//     }
+
+//     const emailRegex = /^\S+@\S+\.\S+$/;
+//     if (!emailRegex.test(email)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid email format",
+//       });
+//     }
+
+//     const existingUser = await UserAuth.findOne({ email });
+//     if (existingUser) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Email is already registered",
+//       });
+//     }
+
+//     if (phone) {
+//       if (!/^\d{10,15}$/.test(phone)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Invalid phone number format",
+//         });
+//       }
+
+//       const existingPhoneUser = await UserAuth.findOne({ phone });
+//       if (existingPhoneUser) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Phone number is already registered",
+//         });
+//       }
+//     }
+
+//     if (gender && !["male", "female", "other"].includes(gender.toLowerCase())) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Gender must be 'male', 'female', or 'other'",
+//       });
+//     }
+
+//     if (role && !["seeker", "organizer"].includes(role.toLowerCase())) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Role must be 'seeker' or 'organizer'",
+//       });
+//     }
+
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     let parsedBirthdate = null;
+
+//     if (birthdate) {
+//       const m = moment(birthdate, "DD-MM-YYYY", true);
+//       if (!m.isValid()) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Invalid birthdate format. Use DD-MM-YYYY",
+//         });
+//       }
+//       parsedBirthdate = m.toDate();
+//     }
+
+//     const newUser = await UserAuth.create({
+//       name,
+//       email,
+//       password: hashedPassword,
+//       phone,
+//       birthdate: parsedBirthdate,
+//       gender: gender || null,
+//       role: role || "seeker",
+//       referredBy: referralCode || null,
+//       isVerified: false,
+//     });
+
+//     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+//     await UserVerification.create({
+//       userId: newUser._id,
+//       otp,
+//     });
+
+//     await sendOtpEmail(email, otp);
+
+//     res.status(201).json({
+//       success: true,
+//       message: "User registered successfully. Please verify your email.",
+//       userId: newUser._id,
+//       newUser,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ success: false, message: "Server error" });
+//   }
+// };
+
+// const registerUser = async (req, res) => {
+//   try {
+//     const {
+//       name,
+//       email,
+//       password,
+//       phone,
+//       birthdate,
+//       gender,
+//       role,
+//       referralCode,
+//     } = req.body;
+
+//     // Add request logging
+//     console.log("Registration request received:", { name, email, phone, role });
+
+//     if (!name || !email || !password) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Name, email, and password are required",
+//       });
+//     }
+
+//     const emailRegex = /^\S+@\S+\.\S+$/;
+//     if (!emailRegex.test(email)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid email format",
+//       });
+//     }
+
+//       if (!newUser.referralCode) {
+//       newUser.referralCode = generateReferralCode(newUser.name, newUser._id);
+//       await newUser.save();
+//     }
+
+//     const existingUser = await UserAuth.findOne({ email });
+//     if (existingUser) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Email is already registered",
+//       });
+//     }
+
+//     if (phone) {
+//       if (!/^\d{10,15}$/.test(phone)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Invalid phone number format",
+//         });
+//       }
+
+//       const existingPhoneUser = await UserAuth.findOne({ phone });
+//       if (existingPhoneUser) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Phone number is already registered",
+//         });
+//       }
+//     }
+
+//     if (gender && !["male", "female", "other"].includes(gender.toLowerCase())) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Gender must be 'male', 'female', or 'other'",
+//       });
+//     }
+
+//     if (role && !["seeker", "organizer"].includes(role.toLowerCase())) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Role must be 'seeker' or 'organizer'",
+//       });
+//     }
+
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     let parsedBirthdate = null;
+
+//     if (birthdate) {
+//       const m = moment(birthdate, "DD-MM-YYYY", true);
+//       if (!m.isValid()) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Invalid birthdate format. Use DD-MM-YYYY",
+//         });
+//       }
+//       parsedBirthdate = m.toDate();
+//     }
+
+//     // Log before creating user
+//     console.log("Creating user...");
+    
+//     const newUser = await UserAuth.create({
+//       name,
+//       email,
+//       password: hashedPassword,
+//       phone,
+//       birthdate: parsedBirthdate,
+//       gender: gender || null,
+//       role: role || "seeker",
+//       referredBy: referralCode || null,
+//       isVerified: false,
+//     });
+
+//     console.log("User created:", newUser._id);
+
+//     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+//     await UserVerification.create({
+//       userId: newUser._id,
+//       otp,
+//     });
+
+//     // Wrap email sending in try-catch to prevent it from breaking registration
+//     try {
+//       await sendOtpEmail(email, otp);
+//       console.log("OTP email sent to:", email);
+//     } catch (emailError) {
+//       console.error("Email sending failed:", emailError);
+//       // Don't return error, just log it - user can request OTP again
+//     }
+
+//     res.status(201).json({
+//       success: true,
+//       message: "User registered successfully. Please verify your email.",
+//       userId: newUser._id,
+//       newUser,
+//     });
+//   } catch (err) {
+//     console.error("Registration Error Details:", err);
+    
+//     // Log specific error types
+//     if (err.name === 'ValidationError') {
+//       return res.status(400).json({ 
+//         success: false, 
+//         message: "Validation error", 
+//         details: err.message 
+//       });
+//     }
+    
+//     if (err.name === 'MongoError' || err.name === 'MongoServerError') {
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         details: err.message 
+//       });
+//     }
+    
+//     res.status(500).json({ 
+//       success: false, 
+//       message: "Server error",
+//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//     });
+//   }
+// };
+
 const registerUser = async (req, res) => {
   try {
     const {
@@ -100,62 +420,11 @@ const registerUser = async (req, res) => {
       referralCode,
     } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Name, email, and password are required",
-      });
-    }
+    console.log("📝 Registration request:", { name, email, phone, role });
 
-    const emailRegex = /^\S+@\S+\.\S+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid email format",
-      });
-    }
-
-    const existingUser = await UserAuth.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is already registered",
-      });
-    }
-
-    if (phone) {
-      if (!/^\d{10,15}$/.test(phone)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid phone number format",
-        });
-      }
-
-      const existingPhoneUser = await UserAuth.findOne({ phone });
-      if (existingPhoneUser) {
-        return res.status(400).json({
-          success: false,
-          message: "Phone number is already registered",
-        });
-      }
-    }
-
-    if (gender && !["male", "female", "other"].includes(gender.toLowerCase())) {
-      return res.status(400).json({
-        success: false,
-        message: "Gender must be 'male', 'female', or 'other'",
-      });
-    }
-
-    if (role && !["seeker", "organizer"].includes(role.toLowerCase())) {
-      return res.status(400).json({
-        success: false,
-        message: "Role must be 'seeker' or 'organizer'",
-      });
-    }
+    // ... your validation code ...
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     let parsedBirthdate = null;
 
     if (birthdate) {
@@ -169,6 +438,8 @@ const registerUser = async (req, res) => {
       parsedBirthdate = m.toDate();
     }
 
+    console.log("👤 Creating user...");
+    
     const newUser = await UserAuth.create({
       name,
       email,
@@ -181,24 +452,74 @@ const registerUser = async (req, res) => {
       isVerified: false,
     });
 
+    console.log("✅ User created:", newUser._id);
+
+    // ⚠️ CRITICAL: Generate referral code
+    try {
+      if (!newUser.referralCode) {
+        console.log("🔑 Generating referral code...");
+        newUser.referralCode = generateReferralCode(newUser.name, newUser._id);
+        await newUser.save();
+        console.log("✅ Referral code generated:", newUser.referralCode);
+      }
+    } catch (referralError) {
+      console.error("❌ Referral code generation failed:", referralError);
+      // Don't fail registration, just log it
+    }
+
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    console.log("🔢 OTP generated:", otp);
 
     await UserVerification.create({
       userId: newUser._id,
       otp,
     });
+    console.log("💾 OTP saved to database");
 
-    await sendOtpEmail(email, otp);
+    // Try to send email but don't fail registration
+    try {
+      await sendOtpEmail(email, otp);
+      console.log("📧 Email sent successfully");
+    } catch (emailError) {
+      console.error("❌ Email failed but continuing:", emailError.message);
+      // Continue - user can request OTP again
+    }
 
     res.status(201).json({
       success: true,
       message: "User registered successfully. Please verify your email.",
       userId: newUser._id,
-      newUser,
     });
+    
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    // Log the FULL error details
+    console.error("🔥 REGISTRATION FAILED:");
+    console.error("Error name:", err.name);
+    console.error("Error message:", err.message);
+    console.error("Error stack:", err.stack);
+    
+    // Handle specific error types
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        details: err.message
+      });
+    }
+    
+    if (err.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Duplicate key error",
+        details: err.keyPattern
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 
