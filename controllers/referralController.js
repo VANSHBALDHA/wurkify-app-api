@@ -5,7 +5,7 @@ const axios = require("axios");
 
 const JWT_SECRET = process.env.JWT_SECRET || "wurkifyapp";
 const REFERRAL_APP_LINK =
-  process.env.REFERRAL_APP_LINK || "https://wurkify.com/signup";
+  process.env.REFERRAL_APP_LINK || "https://wurkify.in/signup";
 
 const RAZORPAY_KEY_ID = "rzp_live_RQErm1QXjwLHM9";
 const RAZORPAY_KEY_SECRET = "WjywpnGqjiMdvLPYhUnjQHTT";
