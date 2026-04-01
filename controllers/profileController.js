@@ -407,6 +407,8 @@ const upsertDocumentation = async (req, res) => {
     let aadharImageUrl = null;
     let panImageUrl = null;
 
+    console.log("Received files:", req.files); // Debug log to check file uploads
+
     if (req.files && req.files.aadharImage?.length > 0) {
       aadharImageUrl = await uploadToCloudinary(
         req.files.aadharImage[0].buffer,
