@@ -70,7 +70,6 @@ const userAuthSchema = new mongoose.Schema(
   }
 );
 
-userAuthSchema.index({ email: 1 });
 
 const UserAuth = mongoose.model("UserAuth", userAuthSchema);
 

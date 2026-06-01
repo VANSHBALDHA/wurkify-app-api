@@ -39,6 +39,10 @@ const io = new Server(server, {
   pingInterval: 25000,
 });
 
+const onlineUsers = new Map();
+global.onlineUsers = onlineUsers;
+global.io = io;
+
 io.use((socket, next) => {
   try {
     const token =
@@ -60,6 +64,7 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   const userId = socket.user._id.toString();
 
+  onlineUsers.set(userId, socket.id);
   console.log(`🔌 Socket connected: ${userId}`);
 
   socket.join(userId);
@@ -129,6 +134,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", (reason) => {
+    onlineUsers.delete(userId);
     console.log(`❌ Socket disconnected: ${userId} (${reason})`);
   });
 
@@ -137,7 +143,7 @@ io.on("connection", (socket) => {
   });
 });
 
-module.exports.io = io;
+// module.exports.io = io; // Removed to fix circular dependency overwriting
 
 const cache = new NodeCache();
 
@@ -162,9 +168,11 @@ app.use(errorMiddleware);
 const handler = serverless(app);
 module.exports = app;
 module.exports.handler = handler;
+module.exports.io = io;
+module.exports.onlineUsers = onlineUsers;
 
 if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
+  const PORT = process.env.PORT || 5001;
   server.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
     console.log(`🔌 Socket.IO ready`);

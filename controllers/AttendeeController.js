@@ -565,6 +565,64 @@ const submitAttendanceReport = async (req, res) => {
   }
 };
 
+const exportMyAttendance = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded._id;
+    const { eventId } = req.body;
+
+    if (!eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId is required",
+      });
+    }
+
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    const record = await AttendeeCheckin.findOne({ eventId, userId });
+
+    if (!record || !record.sessions.length) {
+      return res.status(404).json({ success: false, message: "No attendance found for this event" });
+    }
+
+    const rows = [];
+
+    record.sessions.forEach((s) => {
+      const duration = calculateDuration(s.checkinTime, s.checkoutTime);
+      rows.push({
+        Event: event.eventName,
+        "Check-in Time": formatDateTime(s.checkinTime) || "-",
+        "Check-out Time": formatDateTime(s.checkoutTime) || "-",
+        "Check-in Status": s.checkinStatus,
+        "Check-out Status": s.checkoutStatus,
+        "Total Minutes": duration?.totalMinutes || 0,
+      });
+    });
+
+    const parser = new Parser();
+    const csv = parser.parse(rows);
+
+    res.header("Content-Type", "text/csv");
+    res.header(
+      "Content-Disposition",
+      `attachment; filename=my_attendance_${eventId}.csv`,
+    );
+
+    return res.send(csv);
+  } catch (err) {
+    console.error("Export My Attendance Error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
   submitCheckin,
   submitCheckout,
@@ -575,4 +633,5 @@ module.exports = {
   getMyTimesheet,
   exportAttendance,
   submitAttendanceReport,
+  exportMyAttendance,
 };
